@@ -1,0 +1,8 @@
+services:
+  - type: web
+    name: ccavenue-webhook
+    env: docker
+    plan: free
+    buildCommand: ""
+    startCommand: apache2-foreground
+    dockerfilePath: ./Dockerfile
