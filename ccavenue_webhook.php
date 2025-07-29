@@ -1,7 +1,6 @@
 <?php
-$working_key = 'B410D0FB52051326F8B5F33B491A9230'; // Replace with your staging/live key
+$working_key = 'B410D0FB52051326F8B5F33B491A9230';
 
-// Step 1: Handle encrypted POST from CCAvenue
 $encResp = $_POST['encResp'] ?? '';
 file_put_contents("webhook_log.json", json_encode($_POST));
 
@@ -9,8 +8,6 @@ if (!$encResp) {
     echo json_encode(["status" => "error", "message" => "encResp not found"]);
     exit;
 }
-
-// Step 2: Decrypt encResp
 
 function hextobin($hexString) {
     $bin = "";
@@ -28,17 +25,14 @@ function decrypt($encryptedText, $key) {
 }
 
 $decrypted = decrypt($encResp, $working_key);
-parse_str($decrypted, $parsed); // converts query string into array
+parse_str($decrypted, $parsed);
 file_put_contents("decrypted_log.json", json_encode($parsed));
 
-// Step 3: Extract values
-// $refNo = $parsed['reference_no'] ?? 'NA';
 $refNo = $parsed['merchant_param1'] ?? $parsed['inv_mer_reference_no'] ?? 'NA';
 $status = strtolower($parsed['order_status'] ?? 'Unknown');
 $status = $status === 'success' ? 'success' : 'failed';
 $paymentMode = $parsed['payment_mode'] ?? 'Unknown';
 
-// Send response to CCAvenue
 echo json_encode([
     "status" => "received",
     "reference_no" => $refNo,
@@ -47,7 +41,6 @@ echo json_encode([
                  
 ]);
 
-// Step 4: Get fresh Zoho access token
 function getZohoAccessToken() {
     $client_id = '1000.QT7DOYHYASD7JCOEOIW41AOXO1I3NC';
     $client_secret = '3cdc3a3ccb8411df5cb4dfbe10f8b5a9c43c43ec06';
@@ -77,7 +70,6 @@ if (!$access_token || $refNo === 'NA') {
     exit;
 }
 
-// Step 5: Update Zoho CRM
 $module = "Deals";
 $search_url = "https://zohoapis.in/crm/v2/$module/search?criteria=(Reference_ID:equals:$refNo)";
 $headers = [
@@ -85,7 +77,6 @@ $headers = [
     "Content-Type: application/json"
 ];
 
-// Search Deal
 $ch = curl_init();
 curl_setopt($ch, CURLOPT_URL, $search_url);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
@@ -98,7 +89,6 @@ $search_result = json_decode($search_response, true);
 if (isset($search_result['data'][0]['id'])) {
     $deal_id = $search_result['data'][0]['id'];
 
-    // Update Deal
     $update_url = "https://zohoapis.in/crm/v2/$module/$deal_id";
     $update_body = json_encode([
         "data" => [[
@@ -119,23 +109,3 @@ if (isset($search_result['data'][0]['id'])) {
     file_put_contents("zoho_update_log.json", $update_response);
 }
 ?>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
