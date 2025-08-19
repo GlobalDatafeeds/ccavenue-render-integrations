@@ -3,7 +3,7 @@
 // Uses environment variable CCA_WORKING_KEY and ZOHO_FLOW_WEBHOOK
 
 $WORKING_KEY = getenv('CCA_WORKING_KEY') ?: 'B410D0FB52051326F8B5F33B491A9230';
-$FLOW_WEBHOOK = getenv('ZOHO_FLOW_WEBHOOK') ?: 'https://flow.zoho.in/60040586143/flow/webhook/incoming?zapikey=YOUR_KEY';
+$FLOW_WEBHOOK = getenv('ZOHO_FLOW_WEBHOOK') ?: 'https://flow.zoho.in/60040586143/flow/webhook/incoming?zapikey=1001.43db27cdaa06246af2f14b82dd07f31e.f0fe67f215db79f856304aa6bb7d4fb7&isdebug=true';
 
 // DEBUG mode: if debug=1 and 'debug_payload' posted, the script will skip decryption and use provided JSON (for testing)
 $DEBUG = (isset($_REQUEST['debug']) && $_REQUEST['debug'] == '1');
