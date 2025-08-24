@@ -5,7 +5,6 @@ $URL = "https://api.ccavenue.com/apis/servlet/DoWebTrans";
 
 header("Content-Type: application/json");
 
-// --- Read input ---
 $raw = file_get_contents("php://input");
 $input = json_decode($raw, true);
 
@@ -14,13 +13,7 @@ if (!$input || !is_array($input)) {
     exit;
 }
 
-// --- Add reference & product data ---
-$input['merchant_param1'] = $input['merchant_param1'] ?? uniqid('deal_'); // Deal reference
-$input['merchant_param2'] = json_encode($input['products'] ?? []); // Product array as JSON
-
 $merchant_data = json_encode($input);
-
-// --- Encrypt CCAvenue request ---
 $enc_request = encrypt($merchant_data, $working_key);
 
 $final_data = "request_type=JSON&access_code=$access_code&command=generateQuickInvoice&version=1.2&response_type=JSON&enc_request=$enc_request";
@@ -40,22 +33,23 @@ $status = $responseParts['status'] ?? '0';
 
 $enc_response_clean = preg_replace('/[^a-fA-F0-9]/', '', $enc_response);
 if (strlen($enc_response_clean) % 2 !== 0) {
-    echo json_encode(["status"=>"0","error"=>"enc_response not valid HEX","raw"=>$enc_response]);
+    echo json_encode([
+        "status" => "0",
+        "error" => "enc_response not valid HEX",
+        "raw" => $enc_response
+    ]);
     exit;
 }
 
 $decrypted = decrypt($enc_response_clean, $working_key);
 $responseData = json_decode($decrypted, true);
 
-// --- Return payment link & reference ---
 echo json_encode([
     "status" => $status,
     "tiny_url" => $responseData['tiny_url'] ?? '',
-    "reference_id" => $input['merchant_param1'],
     "full_response" => $responseData
 ]);
 
-// --- Encryption Functions ---
 function encrypt($plainText, $key) {
     $key = hextobin(md5($key));
     $initVector = pack("C*", ...range(0, 15));
