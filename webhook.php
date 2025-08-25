@@ -2,10 +2,9 @@
 // === CONFIGURATION ===
 $working_key = 'B410D0FB52051326F8B5F33B491A9230';
 $zoho_client_id = '1000.QT7DOYHYASD7JCOEOIW41AOXO1I3NC';
-$zoho_client_secret = 'YOUR_CLIENT_SECRET';
-$zoho_refresh_token = 'YOUR_REFRESH_TOKEN';
+$zoho_client_secret = '3cdc3a3ccb8411df5cb4dfbe10f8b5a9c43c43ec06';
+$zoho_refresh_token = '1000.49e678cd6058a884a5da991f79238c67.907c8e04ac8dd556021b441423b97b14';
 $zoho_module = 'Deals';
-
 // === HELPER FUNCTIONS ===
 function hextobin($hexString) {
     $bin = "";
