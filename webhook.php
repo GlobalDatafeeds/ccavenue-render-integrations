@@ -48,6 +48,17 @@ $customer_name  = $parsed['billing_name'] ?? $parsed['merchant_param3'] ?? 'Unkn
 $customer_email = $parsed['billing_email'] ?? $parsed['merchant_param4'] ?? '';
 $customer_phone = $parsed['billing_tel'] ?? $parsed['merchant_param5'] ?? '';
 
+// Parse product details from merchant_param2
+$product_parts = explode('|', $product_desc);
+$product_name = $product_parts[0] ?? '';
+$period_days = $product_parts[1] ?? '';
+$exchange = $product_parts[2] ?? '';
+$plan_category = $product_parts[3] ?? '';
+$data_required = $product_parts[4] ?? '';
+$quantity = $product_parts[5] ?? '';
+$price_before = $product_parts[6] ?? '';
+$price_after = $product_parts[7] ?? '';
+
 // ---------------------------
 // Get Zoho Access Token
 // ---------------------------
@@ -93,17 +104,30 @@ $headers = [
 
 // Prepare deal fields
 $data_fields = [
-    "Deal_Name"      => "Deal for $refNo",
-    "Reference_ID"   => $refNo,
-    "Stage"          => ($status === "Captured") ? "Closed Won" : "Closed Lost",
+    "Deal_Name" => "Deal for $customer_name - $refNo",
+    "Reference_ID" => $refNo,
+    "Stage" => ($status === "Captured") ? "Closed Won" : "Closed Lost",
     "Payment_Status" => $status,
-    "Payment_Mode"   => $paymentMode,
-    "Amount"         => $amount,
-    "Products"       => $product_desc,
-    "Customer_Name"  => $customer_name,
-    "Customer_Email" => $customer_email,
-    "Customer_Phone" => $customer_phone,
-    "Closing_Date"   => date("Y-m-d")
+    "Payment_Mode" => $paymentMode,
+    "Amount" => $amount,
+    "Account_Name" => $customer_name, // Lookup field - will use customer name
+    "Contact_Name" => $customer_name, // Lookup field - will use customer name
+    "Closing_Date" => date("Y-m-d"),
+    "Type_of_Customer" => "Renewal",
+    "Type_of_Enquiry" => "Buy/Free Trial – Data Products",
+    "Data_Required_for_Exchange" => "Bombay Stock Exchange (BSE)",
+    "Subscription_Details" => [
+        [
+            "Product" => $product_name,
+            "Exchanges" => $exchange,
+            "Period_Days" => $period_days,
+            "Plan_Category" => $plan_category,
+            "Data_Required_for_Exchange" => $data_required,
+            "Quantity" => $quantity,
+            "Price_Before" => $price_before,
+            "Price_After" => $price_after
+        ]
+    ]
 ];
 
 // --- Search for Deal by Reference_ID ---
@@ -162,6 +186,16 @@ echo json_encode([
     "products"      => $product_desc,
     "customer_name" => $customer_name,
     "customer_email"=> $customer_email,
-    "customer_phone"=> $customer_phone
+    "customer_phone"=> $customer_phone,
+    "product_details" => [
+        "product_name" => $product_name,
+        "period_days" => $period_days,
+        "exchange" => $exchange,
+        "plan_category" => $plan_category,
+        "data_required" => $data_required,
+        "quantity" => $quantity,
+        "price_before" => $price_before,
+        "price_after" => $price_after
+    ]
 ], JSON_PRETTY_PRINT);
 ?>
