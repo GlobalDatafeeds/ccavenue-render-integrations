@@ -1,12 +1,8 @@
 <?php
 $working_key = 'B410D0FB52051326F8B5F33B491A9230';
 
-// Step 1: Save raw POST data
 $encResp = $_POST['encResp'] ?? '';
-file_put_contents("webhook_log.json", json_encode($_POST));
-
 if (!$encResp) {
-    http_response_code(400);
     echo json_encode(["status" => "error", "message" => "encResp not found"]);
     exit;
 }
@@ -27,20 +23,29 @@ function decrypt($encryptedText, $key) {
     return openssl_decrypt($encryptedText, 'AES-128-CBC', $key, OPENSSL_RAW_DATA, $initVector);
 }
 
-// Step 2: Decrypt and save
+// --- Decrypt POST data ---
 $decrypted = decrypt($encResp, $working_key);
 parse_str($decrypted, $parsed);
-file_put_contents("decrypted_log.json", json_encode($parsed, JSON_PRETTY_PRINT));
 
-// Step 3: Display decrypted response on browser (for debug)
-header("Content-Type: application/json");
-echo json_encode([
-    "status" => "success",
-    "message" => "Webhook received successfully",
-    "decrypted_data" => $parsed
-], JSON_PRETTY_PRINT);
+// --- Extract key data ---
+$refNo = $parsed['merchant_param1'] ?? $parsed['order_id'] ?? 'NA';
+$status = strtolower($parsed['order_status'] ?? 'Unknown');
+$status = $status === 'success' ? 'captured' : 'failed';
+$paymentMode = $parsed['payment_mode'] ?? 'upi';
+$amount = isset($parsed['amount']) ? (float)$parsed['amount'] : 0;
+$products = $parsed['merchant_param2'] ?? '';
 
-// Step 4: Send proper 200 OK to CC Avenue
-http_response_code(200);
-exit;
+// --- Return JSON directly for debugging ---
+$response = [
+    "Reference_No" => $refNo,
+    "Payment_Status" => $status,
+    "Payment_Mode" => $paymentMode,
+    "Amount" => $amount,
+    "Products" => $products,
+    "Raw_Post_Data" => $_POST,
+    "Decrypted_Data" => $parsed
+];
+
+header('Content-Type: application/json');
+echo json_encode($response, JSON_PRETTY_PRINT);
 ?>
