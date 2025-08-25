@@ -98,5 +98,3 @@ curl_close($ch);
 file_put_contents("zoho_response.json", $zohoResponse);
 
 echo $zohoResponse;
-
-
