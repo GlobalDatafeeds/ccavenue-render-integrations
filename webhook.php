@@ -1,4 +1,9 @@
 <?php
+// ---------------------------
+// CCAvenue Webhook + Zoho CRM Deal Creation
+// ---------------------------
+
+// CCAvenue Working Key
 $working_key = 'B410D0FB52051326F8B5F33B491A9230';
 
 // --- Capture POST Data ---
@@ -31,29 +36,31 @@ parse_str($decrypted, $parsed);
 file_put_contents("decrypted_log.json", json_encode($parsed));
 
 // --- Extract Payment Info ---
-$refNo = $parsed['merchant_param1'] ?? $parsed['order_id'] ?? 'NA';
-$status = strtolower($parsed['order_status'] ?? 'Unknown');
-$status = ($status === 'success' || $status === 'successful') ? 'captured' : 'failed';
-$paymentMode = $parsed['payment_mode'] ?? 'upi';
-$amount = isset($parsed['amount']) ? (float)$parsed['amount'] : 0;
+$refNo        = $parsed['merchant_param1'] ?? $parsed['order_id'] ?? 'NA';
+$status       = strtolower($parsed['order_status'] ?? 'Unknown');
+$status       = ($status === 'success' || $status === 'successful') ? 'Captured' : 'Failed';
+$paymentMode  = $parsed['payment_mode'] ?? 'UPI';
+$amount       = isset($parsed['amount']) ? (float)$parsed['amount'] : 0;
 
-// --- Extract Product Details ---
-$product_desc = $parsed['merchant_param2'] ?? '';
-$customer_name = $parsed['billing_name'] ?? $parsed['merchant_param3'] ?? 'Unknown';
+// --- Extract Customer/Product Details ---
+$product_desc   = $parsed['merchant_param2'] ?? '';
+$customer_name  = $parsed['billing_name'] ?? $parsed['merchant_param3'] ?? 'Unknown';
 $customer_email = $parsed['billing_email'] ?? $parsed['merchant_param4'] ?? '';
 $customer_phone = $parsed['billing_tel'] ?? $parsed['merchant_param5'] ?? '';
 
-// --- Zoho Access Token ---
+// ---------------------------
+// Get Zoho Access Token
+// ---------------------------
 function getZohoAccessToken() {
-    $client_id = '1000.QT7DOYHYASD7JCOEOIW41AOXO1I3NC';
+    $client_id     = '1000.QT7DOYHYASD7JCOEOIW41AOXO1I3NC';
     $client_secret = '3cdc3a3ccb8411df5cb4dfbe10f8b5a9c43c43ec06';
     $refresh_token = '1000.49e678cd6058a884a5da991f79238c67.907c8e04ac8dd556021b441423b97b14';
 
     $postData = http_build_query([
         'refresh_token' => $refresh_token,
-        'client_id' => $client_id,
+        'client_id'     => $client_id,
         'client_secret' => $client_secret,
-        'grant_type' => 'refresh_token'
+        'grant_type'    => 'refresh_token'
     ]);
 
     $ch = curl_init("https://accounts.zoho.in/oauth/v2/token");
@@ -69,18 +76,37 @@ function getZohoAccessToken() {
 
 $access_token = getZohoAccessToken();
 if (!$access_token || $refNo === 'NA') {
-    file_put_contents("zoho_error.json", json_encode(["error" => "access_token missing or refNo invalid"]));
+    file_put_contents("zoho_error.json", json_encode([
+        "error" => "access_token missing or refNo invalid"
+    ]));
     exit;
 }
 
-// --- Zoho API Setup ---
-$module = "Deals";
+// ---------------------------
+// Push Data to Zoho CRM Deals
+// ---------------------------
+$module  = "Deals";
 $headers = [
     "Authorization: Zoho-oauthtoken $access_token",
     "Content-Type: application/json"
 ];
 
-// --- Search Deal ---
+// Prepare deal fields
+$data_fields = [
+    "Deal_Name"      => "Deal for $refNo",
+    "Reference_ID"   => $refNo,
+    "Stage"          => ($status === "Captured") ? "Closed Won" : "Closed Lost",
+    "Payment_Status" => $status,
+    "Payment_Mode"   => $paymentMode,
+    "Amount"         => $amount,
+    "Products"       => $product_desc,
+    "Customer_Name"  => $customer_name,
+    "Customer_Email" => $customer_email,
+    "Customer_Phone" => $customer_phone,
+    "Closing_Date"   => date("Y-m-d")
+];
+
+// --- Search for Deal by Reference_ID ---
 $search_url = "https://www.zohoapis.in/crm/v2/$module/search?criteria=(Reference_ID:equals:$refNo)";
 $ch = curl_init();
 curl_setopt($ch, CURLOPT_URL, $search_url);
@@ -88,26 +114,16 @@ curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
 $search_response = curl_exec($ch);
 curl_close($ch);
+
 $search_result = json_decode($search_response, true);
 file_put_contents("zoho_search_log.json", $search_response);
 
-// --- Update or Create Deal ---
-$data_fields = [
-    "Deal_Name" => "Deal for $refNo",
-    "Reference_ID" => $refNo,
-    "Payment_Status" => $status,
-    "Payment_Mode" => $paymentMode,
-    "Amount" => $amount,
-    "Products" => $product_desc,
-    "Customer_Name" => $customer_name,
-    "Customer_Email" => $customer_email,
-    "Customer_Phone" => $customer_phone
-];
-
+// --- Update if Deal Exists, else Create ---
 if (isset($search_result['data'][0]['id'])) {
     $deal_id = $search_result['data'][0]['id'];
-    $update_url = "https://www.zohoapis.in/crm/v2/$module/$deal_id";
+    $update_url  = "https://www.zohoapis.in/crm/v2/$module/$deal_id";
     $update_body = json_encode(["data" => [$data_fields]]);
+
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $update_url);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "PUT");
@@ -116,10 +132,12 @@ if (isset($search_result['data'][0]['id'])) {
     curl_setopt($ch, CURLOPT_POSTFIELDS, $update_body);
     $update_response = curl_exec($ch);
     curl_close($ch);
+
     file_put_contents("zoho_update_log.json", $update_response);
 } else {
-    $create_url = "https://www.zohoapis.in/crm/v2/$module";
+    $create_url  = "https://www.zohoapis.in/crm/v2/$module";
     $create_body = json_encode(["data" => [$data_fields]]);
+
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $create_url);
     curl_setopt($ch, CURLOPT_POST, true);
@@ -128,16 +146,22 @@ if (isset($search_result['data'][0]['id'])) {
     curl_setopt($ch, CURLOPT_POSTFIELDS, $create_body);
     $create_response = curl_exec($ch);
     curl_close($ch);
+
     file_put_contents("zoho_create_log.json", $create_response);
 }
 
-// --- Response for Testing ---
+// ---------------------------
+// Response for Debugging
+// ---------------------------
 echo json_encode([
-    "status" => "received",
-    "reference_no" => $refNo,
-    "order_status" => $status,
-    "payment_mode" => $paymentMode,
-    "amount" => $amount,
-    "products" => $product_desc
+    "status"        => "received",
+    "reference_no"  => $refNo,
+    "order_status"  => $status,
+    "payment_mode"  => $paymentMode,
+    "amount"        => $amount,
+    "products"      => $product_desc,
+    "customer_name" => $customer_name,
+    "customer_email"=> $customer_email,
+    "customer_phone"=> $customer_phone
 ], JSON_PRETTY_PRINT);
 ?>
