@@ -75,31 +75,32 @@ $headers = [
     "Content-Type: application/json"
 ];
 
-// --- Create Deal ---
-$deal_data = [
-    "Deal_Name"                     => $billing_name,
-    "Amount"                        => $amount,
-    "Description"                   => $product_desc,
-    "Stage"                         => "Closed Won",
-    "Type_of_Customer"              => "Renewal",
-    "Type_of_Enquiry"               => "Buy/Free Trial – Data Products",
-    "Data_Required_for_Exchange"    => "Bombay Stock Exchange (BSE)",
-    "Lead_Source"                   => "Website",
-    "Email"                         => $billing_email,
-    "Phone"                         => $billing_phone
+// --- Always Create New Deal ---
+$data_fields = [
+    "Deal_Name"                  => $billing_name,    // Deal Name = Billing Name
+    "Amount"                     => $amount,
+    "Description"                => $product_desc,    // pass product details
+    "Stage"                      => "Closed Won",     // set deal stage
+    "Email"                      => $billing_email,   // standard field
+    "Phone"                      => $billing_phone,   // standard field
+    // --- Custom Fields ---
+    "Type_of_Customer"           => "Renewal",
+    "Type_of_Enquiry"            => "Buy/Free Trial – Data Products",
+    "Data_Required_for_Exchange" => "Bombay Stock Exchange (BSE)",
+    "Lead_Source"                => "Website"
 ];
 
-$create_deal_url = "https://www.zohoapis.in/crm/v2/Deals";
+$create_url = "https://www.zohoapis.in/crm/v2/Deals";
+$create_body = json_encode(["data" => [$data_fields]]);
 $ch = curl_init();
-curl_setopt($ch, CURLOPT_URL, $create_deal_url);
+curl_setopt($ch, CURLOPT_URL, $create_url);
 curl_setopt($ch, CURLOPT_POST, true);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(["data"=>[$deal_data]]));
-$create_deal_response = curl_exec($ch);
+curl_setopt($ch, CURLOPT_POSTFIELDS, $create_body);
+$create_response = curl_exec($ch);
 curl_close($ch);
-
-file_put_contents("zoho_create_log.json", $create_deal_response);
+file_put_contents("zoho_create_log.json", $create_response);
 
 // --- Response for Testing ---
 echo json_encode([
@@ -110,6 +111,10 @@ echo json_encode([
     "billing_name" => $billing_name,
     "billing_email" => $billing_email,
     "billing_phone" => $billing_phone,
-    "stage" => "Closed Won"
+    "stage" => "Closed Won",
+    "Type_of_Customer" => "Renewal",
+    "Type_of_Enquiry" => "Buy/Free Trial – Data Products",
+    "Data_Required_for_Exchange" => "Bombay Stock Exchange (BSE)",
+    "Lead_Source" => "Website"
 ], JSON_PRETTY_PRINT);
 ?>
