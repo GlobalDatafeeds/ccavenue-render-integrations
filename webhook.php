@@ -31,17 +31,15 @@ parse_str($decrypted, $parsed);
 file_put_contents("decrypted_log.json", json_encode($parsed));
 
 // --- Extract Payment Info ---
-$refNo = $parsed['merchant_param1'] ?? $parsed['order_id'] ?? 'NA';
 $status = strtolower($parsed['order_status'] ?? 'Unknown');
 $status = ($status === 'success' || $status === 'successful') ? 'captured' : 'failed';
-$paymentMode = $parsed['payment_mode'] ?? 'upi';
 $amount = isset($parsed['amount']) ? (float)$parsed['amount'] : 0;
 
-// --- Extract Product Details ---
-$product_desc = $parsed['merchant_param2'] ?? '';
-$customer_name = $parsed['billing_name'] ?? $parsed['merchant_param3'] ?? 'Unknown';
-$customer_email = $parsed['billing_email'] ?? $parsed['merchant_param4'] ?? '';
-$customer_phone = $parsed['billing_tel'] ?? $parsed['merchant_param5'] ?? '';
+// --- Extract Billing Details ---
+$product_desc   = $parsed['merchant_param2'] ?? '';
+$billing_name   = $parsed['billing_name'] ?? '';
+$billing_email  = $parsed['billing_email'] ?? '';
+$billing_phone  = $parsed['billing_tel'] ?? '';
 
 // --- Zoho Access Token ---
 function getZohoAccessToken() {
@@ -68,8 +66,8 @@ function getZohoAccessToken() {
 }
 
 $access_token = getZohoAccessToken();
-if (!$access_token || $refNo === 'NA') {
-    file_put_contents("zoho_error.json", json_encode(["error" => "access_token missing or refNo invalid"]));
+if (!$access_token) {
+    file_put_contents("zoho_error.json", json_encode(["error" => "access_token missing"]));
     exit;
 }
 
@@ -80,64 +78,35 @@ $headers = [
     "Content-Type: application/json"
 ];
 
-// --- Search Deal ---
-$search_url = "https://www.zohoapis.in/crm/v2/$module/search?criteria=(Reference_ID:equals:$refNo)";
-$ch = curl_init();
-curl_setopt($ch, CURLOPT_URL, $search_url);
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-$search_response = curl_exec($ch);
-curl_close($ch);
-$search_result = json_decode($search_response, true);
-file_put_contents("zoho_search_log.json", $search_response);
-
-// --- Update or Create Deal ---
+// --- Always Create New Deal (no Reference_ID search) ---
 $data_fields = [
-    "Deal_Name" => "Deal for $refNo",
-    "Reference_ID" => $refNo,
-    "Payment_Status" => $status,
-    "Payment_Mode" => $paymentMode,
-    "Amount" => $amount,
-    "Products" => $product_desc,
-    "Customer_Name" => $customer_name,
-    "Customer_Email" => $customer_email,
-    "Customer_Phone" => $customer_phone
+    "Deal_Name"   => $billing_name,    // Deal Name = Billing Name
+    "Amount"      => $amount,
+    "Description" => $product_desc,    // product details in Description
+    "Email"       => $billing_email,   // standard field
+    "Phone"       => $billing_phone    // standard field
 ];
 
-if (isset($search_result['data'][0]['id'])) {
-    $deal_id = $search_result['data'][0]['id'];
-    $update_url = "https://www.zohoapis.in/crm/v2/$module/$deal_id";
-    $update_body = json_encode(["data" => [$data_fields]]);
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $update_url);
-    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "PUT");
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $update_body);
-    $update_response = curl_exec($ch);
-    curl_close($ch);
-    file_put_contents("zoho_update_log.json", $update_response);
-} else {
-    $create_url = "https://www.zohoapis.in/crm/v2/$module";
-    $create_body = json_encode(["data" => [$data_fields]]);
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $create_url);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $create_body);
-    $create_response = curl_exec($ch);
-    curl_close($ch);
-    file_put_contents("zoho_create_log.json", $create_response);
-}
+$create_url = "https://www.zohoapis.in/crm/v2/$module";
+$create_body = json_encode(["data" => [$data_fields]]);
+$ch = curl_init();
+curl_setopt($ch, CURLOPT_URL, $create_url);
+curl_setopt($ch, CURLOPT_POST, true);
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+curl_setopt($ch, CURLOPT_POSTFIELDS, $create_body);
+$create_response = curl_exec($ch);
+curl_close($ch);
+file_put_contents("zoho_create_log.json", $create_response);
 
 // --- Response for Testing ---
 echo json_encode([
     "status" => "received",
-    "reference_no" => $refNo,
     "order_status" => $status,
-    "payment_mode" => $paymentMode,
     "amount" => $amount,
-    "products" => $product_desc
+    "products" => $product_desc,
+    "billing_name" => $billing_name,
+    "billing_email" => $billing_email,
+    "billing_phone" => $billing_phone
 ], JSON_PRETTY_PRINT);
 ?>
