@@ -1,160 +1,105 @@
 <?php
+// ---------------------------
+// CCAvenue Webhook + Zoho CRM Deal Creation
+// ---------------------------
+
+// CCAvenue Working Key
 $working_key = 'B410D0FB52051326F8B5F33B491A9230';
+
+// Zoho CRM Access Token
+$access_token = "YOUR_ZOHO_ACCESS_TOKEN";
 
 // --- Capture POST Data ---
 $encResp = $_POST['encResp'] ?? '';
-file_put_contents("webhook_log.json", json_encode($_POST));
-
 if (!$encResp) {
     echo json_encode(["status" => "error", "message" => "encResp not found"]);
     exit;
 }
 
+// --- Decrypt Function ---
+function decryptResponse($encResp, $key) {
+    $encResp = base64_decode($encResp);
+    $key = pack('H*', $key);
+    $iv = $key;
+    return openssl_decrypt($encResp, "AES-128-CBC", $key, OPENSSL_RAW_DATA, $iv);
+}
+
 // --- Decrypt Response ---
-function hextobin($hexString) {
-    $bin = "";
-    for ($i = 0; $i < strlen($hexString); $i += 2) {
-        $bin .= pack("H*", substr($hexString, $i, 2));
-    }
-    return $bin;
-}
+$rcvdString = decryptResponse($encResp, $working_key);
+parse_str($rcvdString, $response);
 
-function decrypt($encryptedText, $key) {
-    $key = hextobin(md5($key));
-    $initVector = pack("C*", ...range(0, 15));
-    $encryptedText = hextobin($encryptedText);
-    return openssl_decrypt($encryptedText, 'AES-128-CBC', $key, OPENSSL_RAW_DATA, $initVector);
-}
+// Log webhook
+file_put_contents("ccavenue_log.json", json_encode($response));
 
-$decrypted = decrypt($encResp, $working_key);
-parse_str($decrypted, $parsed);
-file_put_contents("decrypted_log.json", json_encode($parsed));
+// Extract customer details
+$billing_name    = $response['billing_name'] ?? '';
+$billing_email   = $response['billing_email'] ?? '';
+$billing_tel     = $response['billing_tel'] ?? '';
+$order_id        = $response['order_id'] ?? '';
+$order_status    = $response['order_status'] ?? '';
+$amount          = $response['amount'] ?? 0;
 
-// --- Extract Payment Info ---
-$refNo = $parsed['order_id'] ?? 'NA';
-$status = strtolower($parsed['order_status'] ?? 'Unknown');
-$status = ($status === 'success' || $status === 'successful') ? 'captured' : 'failed';
-$paymentMode = $parsed['payment_mode'] ?? 'upi';
-$amount = isset($parsed['amount']) ? (float)$parsed['amount'] : 0;
-
-// --- Extract Billing & Product Details ---
-$product_desc = $parsed['merchant_param1'] ?? ''; 
-$billing_name = $parsed['billing_name'] ?? 'Unknown';
-$billing_email = $parsed['billing_email'] ?? '';
-$billing_tel = $parsed['billing_tel'] ?? '';
-
-// --- Split Name into First & Last ---
-$first_name = $billing_name;
-$last_name = "";
-if (strpos($billing_name, " ") !== false) {
-    $name_parts = explode(" ", $billing_name, 2);
-    $first_name = $name_parts[0];
-    $last_name = $name_parts[1];
-}
-
-// --- Zoho Access Token ---
-function getZohoAccessToken() {
-    $client_id = '1000.QT7DOYHYASD7JCOEOIW41AOXO1I3NC';
-    $client_secret = '3cdc3a3ccb8411df5cb4dfbe10f8b5a9c43c43ec06';
-    $refresh_token = '1000.49e678cd6058a884a5da991f79238c67.907c8e04ac8dd556021b441423b97b14';
-
-    $postData = http_build_query([
-        'refresh_token' => $refresh_token,
-        'client_id' => $client_id,
-        'client_secret' => $client_secret,
-        'grant_type' => 'refresh_token'
+// --- Function: Call Zoho API ---
+function zohoApi($url, $method, $data = [], $access_token) {
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, 1);
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, [
+        "Authorization: Zoho-oauthtoken $access_token",
+        "Content-Type: application/json"
     ]);
-
-    $ch = curl_init("https://accounts.zoho.in/oauth/v2/token");
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    if (!empty($data)) {
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+    }
     $response = curl_exec($ch);
     curl_close($ch);
-
-    $data = json_decode($response, true);
-    return $data['access_token'] ?? null;
+    return json_decode($response, true);
 }
 
-$access_token = getZohoAccessToken();
-if (!$access_token || $refNo === 'NA') {
-    file_put_contents("zoho_error.json", json_encode(["error" => "access_token missing or refNo invalid"]));
-    exit;
-}
+// --- Step 1: Check if Contact exists by email ---
+$searchUrl = "https://www.zohoapis.in/crm/v2/Contacts/search?email=" . urlencode($billing_email);
+$contactSearch = zohoApi($searchUrl, "GET", [], $access_token);
 
-// --- Zoho API Setup ---
-$module = "Deals";
-$headers = [
-    "Authorization: Zoho-oauthtoken $access_token",
-    "Content-Type: application/json"
-];
-
-// --- Search Deal ---
-$search_url = "https://www.zohoapis.in/crm/v2/$module/search?criteria=(Reference_ID:equals:$refNo)";
-$ch = curl_init();
-curl_setopt($ch, CURLOPT_URL, $search_url);
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-$search_response = curl_exec($ch);
-curl_close($ch);
-$search_result = json_decode($search_response, true);
-file_put_contents("zoho_search_log.json", $search_response);
-
-// --- Update or Create Deal ---
-$data_fields = [
-    "Deal_Name" => $billing_name,   // Deal_Name = billing_name
-    "Reference_ID" => $refNo,
-    "Payment_Status" => $status,
-    "Payment_Mode" => $paymentMode,
-    "Amount" => $amount,
-    "Description" => $product_desc, // product details
-
-    // Lookup fields
-    "Account_Name" => [
-        "name" => $billing_name
-    ],
-    "Contact_Name" => [
-        "First_Name" => $first_name,
-        "Last_Name" => $last_name,
-        "Email" => $billing_email,
-        "Phone" => $billing_tel
-    ]
-];
-
-if (isset($search_result['data'][0]['id'])) {
-    $deal_id = $search_result['data'][0]['id'];
-    $update_url = "https://www.zohoapis.in/crm/v2/$module/$deal_id";
-    $update_body = json_encode(["data" => [$data_fields]]);
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $update_url);
-    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "PUT");
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $update_body);
-    $update_response = curl_exec($ch);
-    curl_close($ch);
-    file_put_contents("zoho_update_log.json", $update_response);
+if (!empty($contactSearch['data'])) {
+    $contact_id = $contactSearch['data'][0]['id'];
 } else {
-    $create_url = "https://www.zohoapis.in/crm/v2/$module";
-    $create_body = json_encode(["data" => [$data_fields]]);
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $create_url);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $create_body);
-    $create_response = curl_exec($ch);
-    curl_close($ch);
-    file_put_contents("zoho_create_log.json", $create_response);
+    // --- Step 2: Create Contact if not exists ---
+    $contactData = [
+        "data" => [[
+            "Last_Name" => $billing_name ?: "Unknown",
+            "Email" => $billing_email,
+            "Phone" => $billing_tel
+        ]]
+    ];
+    $contactCreate = zohoApi("https://www.zohoapis.in/crm/v2/Contacts", "POST", $contactData, $access_token);
+    $contact_id = $contactCreate['data'][0]['details']['id'] ?? null;
 }
 
-// --- Response for Testing ---
-echo json_encode([
-    "status" => "received",
-    "reference_no" => $refNo,
-    "order_status" => $status,
-    "payment_mode" => $paymentMode,
-    "amount" => $amount,
-    "products" => $product_desc
-], JSON_PRETTY_PRINT);
+// --- Step 3: Create Deal ---
+if ($contact_id) {
+    $dealData = [
+        "data" => [[
+            "Deal_Name"      => "Order - " . $order_id,
+            "Stage"          => ($order_status == "Success") ? "Closed Won" : "Payment Pending",
+            "Amount"         => $amount,
+            "Contact_Name"   => ["id" => $contact_id],
+            "Closing_Date"   => date("Y-m-d", strtotime("+7 days"))
+        ]]
+    ];
+
+    $dealCreate = zohoApi("https://www.zohoapis.in/crm/v2/Deals", "POST", $dealData, $access_token);
+    file_put_contents("deal_log.json", json_encode($dealCreate));
+
+    echo json_encode([
+        "status" => "success",
+        "message" => "Deal created",
+        "response" => $dealCreate
+    ]);
+} else {
+    echo json_encode([
+        "status" => "error",
+        "message" => "Could not create Contact, so Deal not created"
+    ]);
+}
 ?>
