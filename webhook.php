@@ -31,29 +31,33 @@ parse_str($decrypted, $parsed);
 file_put_contents("decrypted_log.json", json_encode($parsed));
 
 // --- Extract Payment Info ---
-$refNo = $parsed['order_id'] ?? 'NA';
+$refNo = $parsed['merchant_param1'] ?? $parsed['order_id'] ?? 'NA';
 $status = strtolower($parsed['order_status'] ?? 'Unknown');
 $status = ($status === 'success' || $status === 'successful') ? 'captured' : 'failed';
 $paymentMode = $parsed['payment_mode'] ?? 'upi';
 $amount = isset($parsed['amount']) ? (float)$parsed['amount'] : 0;
 
-// --- Extract Customer Info ---
+// --- Extract Customer Details ---
 $customer_name = $parsed['billing_name'] ?? 'Unknown';
 $customer_email = $parsed['billing_email'] ?? '';
 $customer_phone = $parsed['billing_tel'] ?? '';
 
-// --- Extract Product / Subscription Details ---
-$merchant_param1 = $parsed['merchant_param1'] ?? '';
-// Example: Product|NimbleDataPlusLite - 15 Symbols ZohoTesting|30|NFO|No|No|1|1.994915|1.694915
-$product_parts = explode("|", $merchant_param1);
+// --- Extract and Parse Product Details ---
+$product_details = $parsed['merchant_param1'] ?? '';
+$product_parts = explode('|', $product_details);
 
-// Assign safely
-$product_name   = $product_parts[1] ?? '';
-$period_days    = $product_parts[2] ?? '';
-$exchange       = $product_parts[3] ?? '';
-$plan_category  = $product_parts[4] ?? '';
-$price_before   = $product_parts[7] ?? '';
-$price_after    = $product_parts[8] ?? '';
+// Map product details to subform fields
+$subscription_details = [];
+if (count($product_parts) >= 8) {
+    $subscription_details[] = [
+        "Product" => $product_parts[0] ?? '',
+        "Exchanges" => $product_parts[3] ?? '',
+        "Period_Days" => (int)($product_parts[2] ?? 0),
+        "Price_Before" => (float)($product_parts[6] ?? 0),
+        "Price_After" => (float)($product_parts[7] ?? 0),
+        "Plan_Category" => $product_parts[4] ?? ''
+    ];
+}
 
 // --- Zoho Access Token ---
 function getZohoAccessToken() {
@@ -103,35 +107,26 @@ curl_close($ch);
 $search_result = json_decode($search_response, true);
 file_put_contents("zoho_search_log.json", $search_response);
 
-// --- Deal Data Mapping ---
+// --- Prepare Deal Data ---
 $data_fields = [
-    "Deal_Name" => $customer_name,
+    "Deal_Name" => "Deal for " . $customer_name,
     "Reference_ID" => $refNo,
+    "Account_Name" => $customer_name, // Lookup field
+    "Contact_Name" => $customer_name, // Lookup field
+    "First_Name" => $customer_name,
+    "Last_Name" => "",
+    "Phone" => $customer_phone,
+    "Email" => $customer_email,
     "Payment_Status" => $status,
     "Payment_Mode" => $paymentMode,
     "Amount" => $amount,
-    "Stage" => "Closed Won",
     "Type_of_Customer" => "Renewal",
     "Type_of_Enquiry" => "Buy/Free Trial – Data Products",
     "Data_Required_for_Exchange" => "Bombay Stock Exchange (BSE)",
-    // Subform mapping
-    "Subscription_Details" => [
-        [
-            "Product" => $product_name,
-            "Exchanges" => $exchange,
-            "Period_Days" => $period_days,
-            "Plan_Category" => $plan_category,
-            "Price_Before" => $price_before,
-            "Price_After" => $price_after
-        ]
-    ],
-    // Contact lookup fields
-    "Customer_Name" => $customer_name,
-    "Customer_Email" => $customer_email,
-    "Customer_Phone" => $customer_phone
+    "Stage" => "Closed Won",
+    "Subscription_Details" => $subscription_details
 ];
 
-// --- Update or Create Deal ---
 if (isset($search_result['data'][0]['id'])) {
     $deal_id = $search_result['data'][0]['id'];
     $update_url = "https://www.zohoapis.in/crm/v2/$module/$deal_id";
@@ -166,7 +161,7 @@ echo json_encode([
     "order_status" => $status,
     "payment_mode" => $paymentMode,
     "amount" => $amount,
-    "product" => $product_name,
-    "exchange" => $exchange
+    "customer_name" => $customer_name,
+    "subscription_details" => $subscription_details
 ], JSON_PRETTY_PRINT);
 ?>
