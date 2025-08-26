@@ -30,16 +30,15 @@ $decrypted = decrypt($encResp, $working_key);
 parse_str($decrypted, $parsed);
 file_put_contents("decrypted_log.json", json_encode($parsed));
 
-// --- Extract Payment Info ---
+// --- Extract Payment & Billing Info ---
 $status = strtolower($parsed['order_status'] ?? 'Unknown');
 $status = ($status === 'success' || $status === 'successful') ? 'captured' : 'failed';
 $amount = isset($parsed['amount']) ? (float)$parsed['amount'] : 0;
 
-// --- Extract Billing Details ---
-$product_desc   = $parsed['merchant_param1'] ?? '';  // use merchant_param1 for product details
-$billing_name   = $parsed['billing_name'] ?? '';
-$billing_email  = $parsed['billing_email'] ?? '';
-$billing_phone  = $parsed['billing_tel'] ?? '';
+$product_desc  = $parsed['merchant_param1'] ?? '';
+$billing_name  = $parsed['billing_name'] ?? '';
+$billing_email = $parsed['billing_email'] ?? '';
+$billing_phone = $parsed['billing_tel'] ?? '';
 
 // --- Zoho Access Token ---
 function getZohoAccessToken() {
@@ -71,34 +70,78 @@ if (!$access_token) {
     exit;
 }
 
-// --- Zoho API Setup ---
-$module = "Deals";
 $headers = [
     "Authorization: Zoho-oauthtoken $access_token",
     "Content-Type: application/json"
 ];
 
-// --- Always Create New Deal ---
-$data_fields = [
-    "Deal_Name"   => $billing_name,    // Deal Name = Billing Name
-    "Amount"      => $amount,
-    "Description" => $product_desc,    // pass product details from merchant_param1
-    "Stage"       => "Closed Won",     // set deal stage to Closed Won
-    "Email"       => $billing_email,   // standard field
-    "Phone"       => $billing_phone    // standard field
+// --- Step 1: Search or Create Contact ---
+$contact_id = null;
+
+// Search Contact by Email
+$search_contact_url = "https://www.zohoapis.in/crm/v2/Contacts/search?email={$billing_email}";
+$ch = curl_init();
+curl_setopt($ch, CURLOPT_URL, $search_contact_url);
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+$search_contact_response = curl_exec($ch);
+curl_close($ch);
+$search_contact_result = json_decode($search_contact_response, true);
+
+if (isset($search_contact_result['data'][0]['id'])) {
+    $contact_id = $search_contact_result['data'][0]['id'];
+} else {
+    // Create new Contact
+    // Split first and last name
+    $name_parts = explode(' ', $billing_name, 2);
+    $first_name = $name_parts[0];
+    $last_name  = $name_parts[1] ?? '';
+    
+    $contact_data = [
+        "First_Name" => $first_name,
+        "Last_Name"  => $last_name,
+        "Email"      => $billing_email,
+        "Phone"      => $billing_phone
+    ];
+    $create_contact_url = "https://www.zohoapis.in/crm/v2/Contacts";
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $create_contact_url);
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(["data"=>[$contact_data]]));
+    $create_contact_response = curl_exec($ch);
+    curl_close($ch);
+    $create_contact_result = json_decode($create_contact_response, true);
+    if (isset($create_contact_result['data'][0]['details']['id'])) {
+        $contact_id = $create_contact_result['data'][0]['details']['id'];
+    }
+}
+
+// --- Step 2: Create Deal ---
+$deal_data = [
+    "Deal_Name"                     => $billing_name,
+    "Amount"                        => $amount,
+    "Description"                   => $product_desc,
+    "Stage"                         => "Closed Won",
+    "Contact_Name"                  => ["id" => $contact_id],  // lookup
+    "Type_of_Customer"              => "Renewal",
+    "Type_of_Enquiry"               => "Buy/Free Trial – Data Products",
+    "Data_Required_for_Exchange"    => "Bombay Stock Exchange (BSE)",
+    "Lead_Source"                    => "Website"
 ];
 
-$create_url = "https://www.zohoapis.in/crm/v2/$module";
-$create_body = json_encode(["data" => [$data_fields]]);
+$create_deal_url = "https://www.zohoapis.in/crm/v2/Deals";
 $ch = curl_init();
-curl_setopt($ch, CURLOPT_URL, $create_url);
+curl_setopt($ch, CURLOPT_URL, $create_deal_url);
 curl_setopt($ch, CURLOPT_POST, true);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-curl_setopt($ch, CURLOPT_POSTFIELDS, $create_body);
-$create_response = curl_exec($ch);
+curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(["data"=>[$deal_data]]));
+$create_deal_response = curl_exec($ch);
 curl_close($ch);
-file_put_contents("zoho_create_log.json", $create_response);
+
+file_put_contents("zoho_create_log.json", $create_deal_response);
 
 // --- Response for Testing ---
 echo json_encode([
@@ -109,6 +152,7 @@ echo json_encode([
     "billing_name" => $billing_name,
     "billing_email" => $billing_email,
     "billing_phone" => $billing_phone,
-    "stage" => "Closed Won"
+    "stage" => "Closed Won",
+    "contact_id" => $contact_id
 ], JSON_PRETTY_PRINT);
 ?>
