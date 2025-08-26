@@ -31,32 +31,25 @@ parse_str($decrypted, $parsed);
 file_put_contents("decrypted_log.json", json_encode($parsed));
 
 // --- Extract Payment Info ---
-$refNo = $parsed['merchant_param1'] ?? $parsed['order_id'] ?? 'NA';
+$refNo = $parsed['order_id'] ?? 'NA';
 $status = strtolower($parsed['order_status'] ?? 'Unknown');
 $status = ($status === 'success' || $status === 'successful') ? 'captured' : 'failed';
 $paymentMode = $parsed['payment_mode'] ?? 'upi';
 $amount = isset($parsed['amount']) ? (float)$parsed['amount'] : 0;
 
-// --- Extract Customer Details ---
-$customer_name = $parsed['billing_name'] ?? 'Unknown';
-$customer_email = $parsed['billing_email'] ?? '';
-$customer_phone = $parsed['billing_tel'] ?? '';
+// --- Extract Billing & Product Details ---
+$product_desc = $parsed['merchant_param1'] ?? ''; 
+$billing_name = $parsed['billing_name'] ?? 'Unknown';
+$billing_email = $parsed['billing_email'] ?? '';
+$billing_tel = $parsed['billing_tel'] ?? '';
 
-// --- Extract and Parse Product Details ---
-$product_details = $parsed['merchant_param1'] ?? '';
-$product_parts = explode('|', $product_details);
-
-// Map product details to subform fields
-$subscription_details = [];
-if (count($product_parts) >= 8) {
-    $subscription_details[] = [
-        "Product" => $product_parts[0] ?? '',
-        "Exchanges" => $product_parts[3] ?? '',
-        "Period_Days" => (int)($product_parts[2] ?? 0),
-        "Price_Before" => (float)($product_parts[6] ?? 0),
-        "Price_After" => (float)($product_parts[7] ?? 0),
-        "Plan_Category" => $product_parts[4] ?? ''
-    ];
+// --- Split Name into First & Last ---
+$first_name = $billing_name;
+$last_name = "";
+if (strpos($billing_name, " ") !== false) {
+    $name_parts = explode(" ", $billing_name, 2);
+    $first_name = $name_parts[0];
+    $last_name = $name_parts[1];
 }
 
 // --- Zoho Access Token ---
@@ -107,24 +100,25 @@ curl_close($ch);
 $search_result = json_decode($search_response, true);
 file_put_contents("zoho_search_log.json", $search_response);
 
-// --- Prepare Deal Data ---
+// --- Update or Create Deal ---
 $data_fields = [
-    "Deal_Name" => "Deal for " . $customer_name,
+    "Deal_Name" => $billing_name,   // Deal_Name = billing_name
     "Reference_ID" => $refNo,
-    "Account_Name" => $customer_name, // Lookup field
-    "Contact_Name" => $customer_name, // Lookup field
-    "First_Name" => $customer_name,
-    "Last_Name" => "",
-    "Phone" => $customer_phone,
-    "Email" => $customer_email,
     "Payment_Status" => $status,
     "Payment_Mode" => $paymentMode,
     "Amount" => $amount,
-    "Type_of_Customer" => "Renewal",
-    "Type_of_Enquiry" => "Buy/Free Trial – Data Products",
-    "Data_Required_for_Exchange" => "Bombay Stock Exchange (BSE)",
-    "Stage" => "Closed Won",
-    "Subscription_Details" => $subscription_details
+    "Description" => $product_desc, // product details
+
+    // Lookup fields
+    "Account_Name" => [
+        "name" => $billing_name
+    ],
+    "Contact_Name" => [
+        "First_Name" => $first_name,
+        "Last_Name" => $last_name,
+        "Email" => $billing_email,
+        "Phone" => $billing_tel
+    ]
 ];
 
 if (isset($search_result['data'][0]['id'])) {
@@ -161,7 +155,6 @@ echo json_encode([
     "order_status" => $status,
     "payment_mode" => $paymentMode,
     "amount" => $amount,
-    "customer_name" => $customer_name,
-    "subscription_details" => $subscription_details
+    "products" => $product_desc
 ], JSON_PRETTY_PRINT);
 ?>
