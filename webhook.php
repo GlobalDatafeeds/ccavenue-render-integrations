@@ -36,7 +36,7 @@ $status = ($status === 'success' || $status === 'successful') ? 'captured' : 'fa
 $amount = isset($parsed['amount']) ? (float)$parsed['amount'] : 0;
 
 // --- Extract Billing Details ---
-$product_desc   = $parsed['merchant_param2'] ?? '';
+$product_desc   = $parsed['merchant_param1'] ?? '';  // use merchant_param1 for product details
 $billing_name   = $parsed['billing_name'] ?? '';
 $billing_email  = $parsed['billing_email'] ?? '';
 $billing_phone  = $parsed['billing_tel'] ?? '';
@@ -78,11 +78,12 @@ $headers = [
     "Content-Type: application/json"
 ];
 
-// --- Always Create New Deal (no Reference_ID search) ---
+// --- Always Create New Deal ---
 $data_fields = [
     "Deal_Name"   => $billing_name,    // Deal Name = Billing Name
     "Amount"      => $amount,
-    "Description" => $product_desc,    // product details in Description
+    "Description" => $product_desc,    // pass product details from merchant_param1
+    "Stage"       => "Closed Won",     // set deal stage to Closed Won
     "Email"       => $billing_email,   // standard field
     "Phone"       => $billing_phone    // standard field
 ];
@@ -107,6 +108,7 @@ echo json_encode([
     "products" => $product_desc,
     "billing_name" => $billing_name,
     "billing_email" => $billing_email,
-    "billing_phone" => $billing_phone
+    "billing_phone" => $billing_phone,
+    "stage" => "Closed Won"
 ], JSON_PRETTY_PRINT);
 ?>
