@@ -75,15 +75,51 @@ $headers = [
     "Content-Type: application/json"
 ];
 
-// --- Always Create New Deal ---
+// --- Search Contact by Email ---
+$contact_id = null;
+if(!empty($billing_email)){
+    $contact_search_url = "https://www.zohoapis.in/crm/v2/Contacts/search?email=" . urlencode($billing_email);
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $contact_search_url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    $contact_response = curl_exec($ch);
+    curl_close($ch);
+
+    $contact_data = json_decode($contact_response, true);
+    if(isset($contact_data['data'][0]['id'])){
+        $contact_id = $contact_data['data'][0]['id'];
+    } else {
+        // --- Create Contact if not exists ---
+        $contact_body = [
+            "data" => [[
+                "First_Name" => $billing_name,
+                "Email" => $billing_email,
+                "Phone" => $billing_phone
+            ]]
+        ];
+        $ch = curl_init("https://www.zohoapis.in/crm/v2/Contacts");
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($contact_body));
+        $create_contact_response = curl_exec($ch);
+        curl_close($ch);
+
+        $create_contact_data = json_decode($create_contact_response, true);
+        $contact_id = $create_contact_data['data'][0]['details']['id'] ?? null;
+    }
+}
+
+// --- Create Deal ---
 $data_fields = [
-    "Deal_Name"                  => $billing_name,    // Deal Name = Billing Name
+    "Deal_Name"                  => $billing_name,
     "Amount"                     => $amount,
-    "Description"                => $product_desc,    // pass product details
-    "Stage"                      => "Closed Won",     // set deal stage
-    "Email"                      => $billing_email,   // standard field
-    "Phone"                      => $billing_phone,   // standard field
-    // --- Custom Fields ---
+    "Description"                => $product_desc,
+    "Stage"                      => "Closed Won",
+    "Contact_Name"               => $contact_id ? ["id" => $contact_id] : null,
+    "Email"                      => $billing_email,
+    "Phone"                      => $billing_phone,
     "Type_of_Customer"           => "Renewal",
     "Type_of_Enquiry"            => "Buy/Free Trial – Data Products",
     "Data_Required_for_Exchange" => "Bombay Stock Exchange (BSE)",
@@ -115,6 +151,7 @@ echo json_encode([
     "Type_of_Customer" => "Renewal",
     "Type_of_Enquiry" => "Buy/Free Trial – Data Products",
     "Data_Required_for_Exchange" => "Bombay Stock Exchange (BSE)",
-    "Lead_Source" => "Website"
+    "Lead_Source" => "Website",
+    "Contact_ID" => $contact_id
 ], JSON_PRETTY_PRINT);
 ?>
