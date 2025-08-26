@@ -51,7 +51,6 @@ $dealData = [
     "Products"    => $product_desc,    // ✅ Same product details in Products field
     "Amount"      => $responseData['amount'] ?? '',
     "Stage"       => $responseData['order_status'] ?? '',
-    "Closing_Date"=> date("Y-m-d"),
     "Email"       => $responseData['billing_email'] ?? '',
     "Phone"       => $responseData['billing_tel'] ?? '',
     "Lead_Source" => "Website Order"
