@@ -75,60 +75,18 @@ $headers = [
     "Content-Type: application/json"
 ];
 
-// --- Step 1: Search or Create Contact ---
-$contact_id = null;
-
-// Search Contact by Email
-$search_contact_url = "https://www.zohoapis.in/crm/v2/Contacts/search?email={$billing_email}";
-$ch = curl_init();
-curl_setopt($ch, CURLOPT_URL, $search_contact_url);
-curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-$search_contact_response = curl_exec($ch);
-curl_close($ch);
-$search_contact_result = json_decode($search_contact_response, true);
-
-if (isset($search_contact_result['data'][0]['id'])) {
-    $contact_id = $search_contact_result['data'][0]['id'];
-} else {
-    // Create new Contact
-    // Split first and last name
-    $name_parts = explode(' ', $billing_name, 2);
-    $first_name = $name_parts[0];
-    $last_name  = $name_parts[1] ?? '';
-    
-    $contact_data = [
-        "First_Name" => $first_name,
-        "Last_Name"  => $last_name,
-        "Email"      => $billing_email,
-        "Phone"      => $billing_phone
-    ];
-    $create_contact_url = "https://www.zohoapis.in/crm/v2/Contacts";
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $create_contact_url);
-    curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode(["data"=>[$contact_data]]));
-    $create_contact_response = curl_exec($ch);
-    curl_close($ch);
-    $create_contact_result = json_decode($create_contact_response, true);
-    if (isset($create_contact_result['data'][0]['details']['id'])) {
-        $contact_id = $create_contact_result['data'][0]['details']['id'];
-    }
-}
-
-// --- Step 2: Create Deal ---
+// --- Create Deal ---
 $deal_data = [
     "Deal_Name"                     => $billing_name,
     "Amount"                        => $amount,
     "Description"                   => $product_desc,
     "Stage"                         => "Closed Won",
-    "Contact_Name"                  => ["id" => $contact_id],  // lookup
     "Type_of_Customer"              => "Renewal",
     "Type_of_Enquiry"               => "Buy/Free Trial – Data Products",
     "Data_Required_for_Exchange"    => "Bombay Stock Exchange (BSE)",
-    "Lead_Source"                    => "Website"
+    "Lead_Source"                   => "Website",
+    "Email"                         => $billing_email,
+    "Phone"                         => $billing_phone
 ];
 
 $create_deal_url = "https://www.zohoapis.in/crm/v2/Deals";
@@ -152,7 +110,6 @@ echo json_encode([
     "billing_name" => $billing_name,
     "billing_email" => $billing_email,
     "billing_phone" => $billing_phone,
-    "stage" => "Closed Won",
-    "contact_id" => $contact_id
+    "stage" => "Closed Won"
 ], JSON_PRETTY_PRINT);
 ?>
