@@ -143,25 +143,42 @@ if (!$contact_id) {
 
 // ---------- 6) Build subscription details ----------
 $subscription_details = [];
-if (!empty($cc['merchant_param1'])) {
-    // Split multiple products by ";"
-    $all_products = explode(';', $cc['merchant_param1']);
-    foreach ($all_products as $prod) {
-        $parts = explode('|', $prod);
+
+// Loop through all product_x fields dynamically
+foreach ($cc as $key => $value) {
+    if (strpos($key, "product_") === 0 && !empty($value)) {
+        $parts = array_map('trim', explode('|', $value));
         $subscription_details[] = [
-            "Product"          => $parts[1] ?? '',
-            "Period_Days"      => (int)($parts[2] ?? 0),
-            "Exchanges"        => $parts[3] ?? '',
-            "Price_Before"     => (float)($parts[7] ?? 0),
-            "Price_After"      => (float)($parts[8] ?? 0),
+            "Product"          => $parts[0] ?? '',
+            "Period_Days"      => (int)($parts[1] ?? 0),
+            "Exchanges"        => $parts[2] ?? '',
+            "Option_1"         => $parts[3] ?? '',
+            "Option_2"         => $parts[4] ?? '',
+            "Price_Before"     => (float)($parts[5] ?? 0),
+            "Price_After"      => (float)($parts[6] ?? 0),
             "Expiry_Date"      => $today,
-            "Plan_Category"    => $parts[4] ?? '',
+            "Plan_Category"    => $parts[7] ?? '',
             "Subscription_Numb"=> '',
             "Sub_ID"           => ''
         ];
     }
 }
 
+// fallback: old merchant_param1 logic
+if(empty($subscription_details) && !empty($cc['merchant_param1'])) {
+    $parts = explode('|',$cc['merchant_param1']);
+    $subscription_details[] = [
+        "Product"          => $parts[1] ?? '',
+        "Period_Days"      => (int)($parts[2] ?? 0),
+        "Exchanges"        => $parts[3] ?? '',
+        "Price_Before"     => (float)($parts[7] ?? 0),
+        "Price_After"      => (float)($parts[8] ?? 0),
+        "Expiry_Date"      => $today,
+        "Plan_Category"    => $parts[4] ?? '',
+        "Subscription_Numb"=> '',
+        "Sub_ID"           => ''
+    ];
+}
 
 // ---------- 7) Build deal ----------
 $deal_fields = [
@@ -206,5 +223,6 @@ echo json_encode([
     "stage"=>$stage,
     "deal_id"=>$deal_id,
     "contact_id"=>$contact_id,
-    "type_customer"=>$type_of_customer
+    "type_customer"=>$type_of_customer,
+    "products_count"=>count($subscription_details)
 ],JSON_PRETTY_PRINT);
