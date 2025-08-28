@@ -169,11 +169,12 @@ $deal_fields = [
     "Lead_Source"=>"Website",
     "Type_of_Enquiry"=>"Buy/Free Trial Data Products",
     "Data_Required_for_Exchange"=>["Bombay Stock Exchange (BSE)"],
-    "Type_of_customer"=>$type_of_customer,
+    "Type_of_Customer"=>$type_of_customer,
     "Payment_Mode"=>$payment_mode,
     "Payment_Status"=>($stage==='Closed Won'?'captured':'failed'),
     "Contact_Name"=>$contact_id ? ["id"=>$contact_id]:null,
-    "Subscription_Details"=>$subscription_details
+    "Subscription_Details"=>$subscription_details,
+    "Owner"=> ["id" => "862056000002106001"]
 ];
 
 // ---------- 8) Upsert deal ----------
