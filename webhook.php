@@ -143,19 +143,23 @@ if (!$contact_id) {
 
 // ---------- 6) Build subscription details ----------
 $subscription_details = [];
-if(!empty($cc['merchant_param1'])) {
-    $parts = explode('|',$cc['merchant_param1']);
-    $subscription_details[] = [
-        "Product"=>$parts[1]??'',
-        "Period_Days"=>(int)($parts[2]??0),
-        "Exchanges"=>$parts[3]??'',
-        "Price_Before"=>(float)($parts[7]??0),
-        "Price_After"=>(float)($parts[8]??0),
-        "Expiry_Date"=>$today,
-        "Plan_Category"=>$parts[4]??'',
-        "Subscription_Numb"=>'',
-        "Sub_ID"=>''
-    ];
+if (!empty($cc['merchant_param1'])) {
+    // Split multiple products by ";"
+    $all_products = explode(';', $cc['merchant_param1']);
+    foreach ($all_products as $prod) {
+        $parts = explode('|', $prod);
+        $subscription_details[] = [
+            "Product"          => $parts[1] ?? '',
+            "Period_Days"      => (int)($parts[2] ?? 0),
+            "Exchanges"        => $parts[3] ?? '',
+            "Price_Before"     => (float)($parts[7] ?? 0),
+            "Price_After"      => (float)($parts[8] ?? 0),
+            "Expiry_Date"      => $today,
+            "Plan_Category"    => $parts[4] ?? '',
+            "Subscription_Numb"=> '',
+            "Sub_ID"           => ''
+        ];
+    }
 }
 
 // ---------- 7) Build deal ----------
@@ -173,9 +177,15 @@ $deal_fields = [
     "Payment_Mode"=>$payment_mode,
     "Payment_Status"=>($stage==='Closed Won'?'captured':'failed'),
     "Contact_Name"=>$contact_id ? ["id"=>$contact_id]:null,
-    "Subscription_Details"=>$subscription_details,
+
+    // ✅ Force array of subform rows
+    "Subscription_Details"=>array_values($subscription_details),
+
     "Owner"=> ["id" => "862056000002106001"]
 ];
+
+// Log payload before sending to Zoho
+log_file('zoho_payload.json', $deal_fields);
 
 // ---------- 8) Upsert deal ----------
 $deal_id = null;
