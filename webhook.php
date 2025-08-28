@@ -143,24 +143,28 @@ if (!$contact_id) {
 
 // ---------- 6) Build subscription details ----------
 $subscription_details = [];
-if (!empty($cc['merchant_param1'])) {
-    // Split multiple products by ";"
-    $all_products = explode(';', $cc['merchant_param1']);
-    foreach ($all_products as $prod) {
-        $parts = explode('|', $prod);
+
+for ($i = 1; $i <= 5; $i++) {   // ccavenue provides up to 5 merchant_param
+    $paramKey = "merchant_param".$i;
+    if (!empty($cc[$paramKey])) {
+        $parts = explode('|', $cc[$paramKey]);
+
         $subscription_details[] = [
-            "Product"          => $parts[1] ?? '',
-            "Period_Days"      => (int)($parts[2] ?? 0),
-            "Exchanges"        => $parts[3] ?? '',
-            "Price_Before"     => (float)($parts[7] ?? 0),
-            "Price_After"      => (float)($parts[8] ?? 0),
-            "Expiry_Date"      => $today,
-            "Plan_Category"    => $parts[4] ?? '',
-            "Subscription_Numb"=> '',
-            "Sub_ID"           => ''
+            "Product"        => $parts[1] ?? '',
+            "Period_Days"    => (int)($parts[2] ?? 0),
+            "Exchanges"      => $parts[3] ?? '',
+            "Plan_Category"  => $parts[4] ?? '',
+            "Extra1"         => $parts[5] ?? '',
+            "Quantity"       => (int)($parts[6] ?? 1),
+            "Price_Before"   => (float)($parts[7] ?? 0),
+            "Price_After"    => (float)($parts[8] ?? 0),
+            "Expiry_Date"    => $today,
+            "Subscription_Numb" => '',
+            "Sub_ID"            => ''
         ];
     }
 }
+
 
 // ---------- 7) Build deal ----------
 $deal_fields = [
