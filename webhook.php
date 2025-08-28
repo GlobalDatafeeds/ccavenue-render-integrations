@@ -143,10 +143,11 @@ if (!$contact_id) {
 
 // ---------- 6) Build subscription details ----------
 $subscription_details = [];
-if(!empty($cc['merchant_param1'])) {
-    $parts = explode('|',$cc['merchant_param1']);
+$products = explode(';', $cc['merchant_param1']); // Adjust delimiter
+foreach($products as $p) {
+    $parts = explode('|', $p); // split product attributes
     $subscription_details[] = [
-        "Product"=>$parts[1]??'',
+        "Product"=>$parts[0]??'',
         "Period_Days"=>(int)($parts[2]??0),
         "Exchanges"=>$parts[3]??'',
         "Price_Before"=>(float)($parts[7]??0),
@@ -157,6 +158,7 @@ if(!empty($cc['merchant_param1'])) {
         "Sub_ID"=>''
     ];
 }
+
 
 // ---------- 7) Build deal ----------
 $deal_fields = [
