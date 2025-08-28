@@ -143,20 +143,23 @@ if (!$contact_id) {
 
 // ---------- 6) Build subscription details ----------
 $subscription_details = [];
-$products = explode(';', $cc['merchant_param1']); // Adjust delimiter
-foreach($products as $p) {
-    $parts = explode('|', $p); // split product attributes
-    $subscription_details[] = [
-        "Product"=>$parts[0]??'',
-        "Period_Days"=>(int)($parts[2]??0),
-        "Exchanges"=>$parts[3]??'',
-        "Price_Before"=>(float)($parts[7]??0),
-        "Price_After"=>(float)($parts[8]??0),
-        "Expiry_Date"=>$today,
-        "Plan_Category"=>$parts[4]??'',
-        "Subscription_Numb"=>'',
-        "Sub_ID"=>''
-    ];
+if (!empty($cc['merchant_param1'])) {
+    // Split multiple products by ";"
+    $all_products = explode(';', $cc['merchant_param1']);
+    foreach ($all_products as $prod) {
+        $parts = explode('|', $prod);
+        $subscription_details[] = [
+            "Product"          => $parts[1] ?? '',
+            "Period_Days"      => (int)($parts[2] ?? 0),
+            "Exchanges"        => $parts[3] ?? '',
+            "Price_Before"     => (float)($parts[7] ?? 0),
+            "Price_After"      => (float)($parts[8] ?? 0),
+            "Expiry_Date"      => $today,
+            "Plan_Category"    => $parts[4] ?? '',
+            "Subscription_Numb"=> '',
+            "Sub_ID"           => ''
+        ];
+    }
 }
 
 
