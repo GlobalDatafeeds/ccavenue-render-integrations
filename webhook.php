@@ -1,7 +1,7 @@
 <?php
 // =====================================================
 // ONE WEBHOOK for two scenarios (CCAvenue)
-//  - Scenario A: Website payment -> create/upsert Deal (your mapping kept)
+//  - Scenario A: Website payment -> create/upsert Deal
 //  - Scenario B: Manual payment link -> update existing Deal status only
 // =====================================================
 
@@ -106,7 +106,7 @@ log_file('decrypted_log.json', $cc);
 
 // ---------- 3) Common fields ----------
 $order_id      = $cc['order_id'] ?? '';
-$order_status  = strtolower($cc['order_status'] ?? 'failed');
+$order_status  = strtolower(trim($cc['order_status'] ?? 'failed'));
 $amount        = isset($cc['amount']) ? floatval($cc['amount']) : 0.0;
 $billing_name  = trim($cc['billing_name'] ?? '');
 $billing_email = trim($cc['billing_email'] ?? '');
@@ -114,8 +114,9 @@ $billing_tel   = trim($cc['billing_tel'] ?? '');
 $payment_mode  = $cc['payment_mode'] ?? '';
 $today         = date('Y-m-d');
 
-// Determine success/failure
-$is_success = ($order_status === 'success' || $order_status === 'successful');
+// ✅ Normalize status (CCAvenue sends different variants)
+$success_statuses = ['success','successful','shipped','y','captured'];
+$is_success = in_array($order_status, $success_statuses);
 $stage = $is_success ? 'Closed Won' : 'Closed Lost';
 
 // Extract possible reference number for manual-update scenario
@@ -124,15 +125,10 @@ $inv_ref = $cc['inv_mer_reference_no'] ?? '';
 $ref_candidate = $inv_ref ?: $mp1;
 
 // ---------- 4) Decide flow ----------
-// RULES:
-// - Scenario B (Manual): merchant_param1 has NO '|' (i.e., not the subscription pipe string) OR inv_mer_reference_no is present.
-// - Scenario A (Website): merchant_param1 is your pipe-separated subscription data (contains '|') OR no reference provided.
-
 $manual_flag = false;
 if (!empty($inv_ref)) {
     $manual_flag = true;
 } elseif (!empty($mp1) && strpos($mp1, '|') === false) {
-    // Plain reference id in merchant_param1 (no pipe) => manual link flow
     $manual_flag = true;
 }
 
@@ -143,13 +139,11 @@ $headers = ["Authorization: Zoho-oauthtoken $token", "Content-Type: application/
 
 // =====================================================
 // SCENARIO B: Manual payment link -> UPDATE ONLY
-// (Do not change Deal mappings; just set Payment_Status & Payment_Mode)
 // =====================================================
 if ($manual_flag) {
     $refNo = trim($ref_candidate) ?: 'NA';
-    $status_norm = $is_success ? 'captured' : 'failed'; // align with your first code’s Payment_Status values
+    $status_norm = $is_success ? 'captured' : 'failed';
 
-    // Find Deal by Reference_ID
     if ($refNo !== 'NA') {
         $search_url = Z_BASE."/Deals/search?criteria=(Reference_ID:equals:".rawurlencode($refNo).")";
         $search_res = zget($search_url,$headers);
@@ -159,11 +153,11 @@ if ($manual_flag) {
         if (!empty($search['data'][0]['id'])) {
             $deal_id = $search['data'][0]['id'];
 
-            // UPDATE ONLY minimal fields for manual flow
+            // ✅ Update minimal fields, also Stage if success/failure
             $update_body = json_encode(["data"=>[[
                 "Payment_Status" => $status_norm,
-                "Payment_Mode"   => $payment_mode
-                // NOTE: Not touching Stage, Amount, etc. in manual flow.
+                "Payment_Mode"   => $payment_mode,
+                "Stage"          => $stage
             ]]]);
 
             $update_res = zput(Z_BASE."/Deals/$deal_id", $headers, $update_body);
@@ -179,7 +173,6 @@ if ($manual_flag) {
             ], JSON_PRETTY_PRINT);
             exit;
         } else {
-            // No Deal found — log and fall back? We will exit with not found to avoid accidental create.
             echo json_encode([
                 "status"       => "error",
                 "flow"         => "manual_update",
@@ -200,7 +193,6 @@ if ($manual_flag) {
 
 // =====================================================
 // SCENARIO A: Website payment -> CREATE/UPSERT DEAL
-// (Keeps your original mappings/logic)
 // =====================================================
 
 // ---------- Contact ----------
@@ -231,9 +223,9 @@ if (!$contact_id) {
     $contact_id = $data['data'][0]['details']['id'] ?? null;
 }
 
-// ---------- Subscription details (your parsing kept) ----------
+// ---------- Subscription details ----------
 $subscription_details = [];
-if(!empty($cc['merchant_param1'])) {
+if(!empty($cc['merchant_param1']) && strpos($cc['merchant_param1'],'|')!==false) {
     $parts = explode('|',$cc['merchant_param1']);
     $subscription_details[] = [
         "Product"=>$parts[1]??'',
@@ -248,7 +240,7 @@ if(!empty($cc['merchant_param1'])) {
     ];
 }
 
-// ---------- Deal payload (UNCHANGED mapping) ----------
+// ---------- Deal payload ----------
 $deal_reference = $order_id ?: ('ORD_'.time());
 $deal_fields = [
     "Deal_Name"=>$billing_name,
@@ -268,7 +260,7 @@ $deal_fields = [
     "Owner"=> ["id" => "862056000002106001"]
 ];
 
-// ---------- Upsert by Reference_ID (UNCHANGED behavior) ----------
+// ---------- Upsert ----------
 $deal_id = null;
 $search_url = Z_BASE."/Deals/search?criteria=(Reference_ID:equals:".rawurlencode($deal_fields['Reference_ID']).")";
 $search_res = zget($search_url,$headers);
