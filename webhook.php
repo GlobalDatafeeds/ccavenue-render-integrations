@@ -12,6 +12,7 @@ define('Z_BASE', 'https://www.zohoapis.in/crm/v2');
 function log_file($name, $payload) {
     @file_put_contents($name, is_string($payload) ? $payload : json_encode($payload, JSON_PRETTY_PRINT));
 }
+
 function hextobin($hexString) {
     $bin = "";
     for ($i = 0; $i < strlen($hexString); $i += 2) {
@@ -19,12 +20,14 @@ function hextobin($hexString) {
     }
     return $bin;
 }
+
 function cca_decrypt($encryptedText, $workingKey) {
     $key = hextobin(md5($workingKey));
     $iv  = pack("C*", ...range(0, 15));
     $encryptedText = hextobin($encryptedText);
     return openssl_decrypt($encryptedText, 'AES-128-CBC', $key, OPENSSL_RAW_DATA, $iv);
 }
+
 function zoho_access_token() {
     $post = http_build_query([
         'refresh_token' => Z_REFRESH_TOKEN,
@@ -44,6 +47,7 @@ function zoho_access_token() {
     $data = json_decode($res, true);
     return $data['access_token'] ?? null;
 }
+
 function zget($url, $headers) {
     $ch = curl_init($url);
     curl_setopt_array($ch, [
@@ -55,6 +59,7 @@ function zget($url, $headers) {
     curl_close($ch);
     return $res;
 }
+
 function zpost($url, $headers, $body) {
     $ch = curl_init($url);
     curl_setopt_array($ch, [
@@ -68,6 +73,7 @@ function zpost($url, $headers, $body) {
     curl_close($ch);
     return $res;
 }
+
 function zput($url, $headers, $body) {
     $ch = curl_init($url);
     curl_setopt_array($ch, [
@@ -109,40 +115,6 @@ $token = zoho_access_token();
 if (!$token) { echo json_encode(['status'=>'error','message'=>'Zoho token missing']); exit; }
 $headers = ["Authorization: Zoho-oauthtoken $token", "Content-Type: application/json"];
 
-// ============================================================
-// ========== BRANCH 1: MANUAL DEAL UPDATE ====================
-// ============================================================
-if (!empty($cc['merchant_param5']) && $cc['merchant_param5'] === 'MANUAL_DEAL') {
-    $refNo = $cc['merchant_param1'] ?? $order_id;
-    $status = ($order_status === 'success' || $order_status === 'successful') ? 'success' : 'failed';
-
-    // Find deal by Reference_ID
-    $search_url = Z_BASE."/Deals/search?criteria=(Reference_ID:equals:".rawurlencode($refNo).")";
-    $search_res = zget($search_url,$headers);
-    $search = json_decode($search_res,true);
-
-    if (!empty($search['data'][0]['id'])) {
-        $deal_id=$search['data'][0]['id'];
-        $update_body = json_encode(["data"=>[[
-            "Payment_Status"=>$status,
-            "Payment_Mode"=>$payment_mode
-        ]]]);
-        $res = zput(Z_BASE."/Deals/$deal_id",$headers,$update_body);
-    }
-
-    echo json_encode([
-        "status"=>"ok",
-        "flow"=>"manual_deal",
-        "order_id"=>$refNo,
-        "deal_id"=>$deal_id ?? null
-    ],JSON_PRETTY_PRINT);
-    exit;
-}
-
-// ============================================================
-// ========== BRANCH 2: WEBSITE DEAL FULL LOGIC ===============
-// ============================================================
-
 // ---------- 5) Contact ----------
 $contact_id = null;
 $type_of_customer = 'Fresh';
@@ -171,10 +143,12 @@ if (!$contact_id) {
 
 // ---------- 6) Build subscription details ----------
 $subscription_details = [];
-for ($i = 1; $i <= 5; $i++) {
+
+for ($i = 1; $i <= 5; $i++) {   // ccavenue provides up to 5 merchant_param
     $paramKey = "merchant_param".$i;
     if (!empty($cc[$paramKey])) {
         $parts = explode('|', $cc[$paramKey]);
+
         $subscription_details[] = [
             "Product"        => $parts[1] ?? '',
             "Period_Days"    => (int)($parts[2] ?? 0),
@@ -191,6 +165,7 @@ for ($i = 1; $i <= 5; $i++) {
     }
 }
 
+
 // ---------- 7) Build deal ----------
 $deal_fields = [
     "Deal_Name"=>$billing_name,
@@ -206,9 +181,14 @@ $deal_fields = [
     "Payment_Mode"=>$payment_mode,
     "Payment_Status"=>($stage==='Closed Won'?'captured':'failed'),
     "Contact_Name"=>$contact_id ? ["id"=>$contact_id]:null,
+
+    // ✅ Force array of subform rows
     "Subscription_Details"=>array_values($subscription_details),
+
     "Owner"=> ["id" => "862056000002106001"]
 ];
+
+// Log payload before sending to Zoho
 log_file('zoho_payload.json', $deal_fields);
 
 // ---------- 8) Upsert deal ----------
@@ -231,7 +211,6 @@ if(!empty($search['data'][0]['id'])){
 // ---------- 9) Response ----------
 echo json_encode([
     "status"=>"ok",
-    "flow"=>"website_deal",
     "order_id"=>$deal_fields['Reference_ID'],
     "stage"=>$stage,
     "deal_id"=>$deal_id,
