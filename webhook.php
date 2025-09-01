@@ -181,6 +181,7 @@ $deal_fields = [
     "Payment_Mode"=>$payment_mode,
     "Payment_Status"=>($stage==='Closed Won'?'captured':'failed'),
     "Contact_Name"=>$contact_id ? ["id"=>$contact_id]:null,
+    "Account_Name"     => $billing_name,
 
     // ✅ Force array of subform rows
     "Subscription_Details"=>array_values($subscription_details),
