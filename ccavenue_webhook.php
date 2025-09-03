@@ -4,11 +4,11 @@ $WORKING_KEY = 'B410D0FB52051326F8B5F33B491A9230';
 define('Z_CLIENT_ID', '1000.QT7DOYHYASD7JCOEOIW41AOXO1I3NC');
 define('Z_CLIENT_SECRET', '3cdc3a3ccb8411df5cb4dfbe10f8b5a9c43c43ec06');
 define('Z_REFRESH_TOKEN', '1000.49e678cd6058a884a5da991f79238c67.907c8e04ac8dd556021b441423b97b14');
-define('Z_BASE', 'https://www.zohoapis.in/crm/v2/');
+define('Z_BASE', 'https://www.zohoapis.in/crm/v2');
 
-// ---------- HELPERS ----------
-function log_json($filename, $data) {
-    file_put_contents($filename, json_encode($data, JSON_PRETTY_PRINT) . PHP_EOL, FILE_APPEND);
+// ---------- Helpers ----------
+function log_file($name, $payload) {
+    @file_put_contents($name, is_string($payload) ? $payload : json_encode($payload, JSON_PRETTY_PRINT));
 }
 
 function hextobin($hexString) {
@@ -34,102 +34,99 @@ function zoho_access_token() {
         'grant_type' => 'refresh_token'
     ]);
     $ch = curl_init('https://accounts.zoho.in/oauth/v2/token');
-    curl_setopt_array($ch, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => $post, CURLOPT_RETURNTRANSFER => true]);
-    $res = curl_exec($ch); curl_close($ch);
-    $data = json_decode($res,true);
-    log_json("zoho_token_log.json",$data);
+    curl_setopt_array($ch, [CURLOPT_POST=>true,CURLOPT_POSTFIELDS=>$post,CURLOPT_RETURNTRANSFER=>true]);
+    $res=curl_exec($ch); curl_close($ch);
+    $data=json_decode($res,true);
     return $data['access_token'] ?? null;
 }
 
-function zapi($method, $endpoint, $data = null) {
+function zapi($method, $url, $body=null) {
     $token = zoho_access_token();
-    if(!$token) return null;
-    $url = Z_BASE.$endpoint;
-    $ch = curl_init($url);
-    $headers = ["Authorization: Zoho-oauthtoken $token"];
-    $opts = [
-        CURLOPT_CUSTOMREQUEST => strtoupper($method),
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_HTTPHEADER => $headers
-    ];
-    if($data){
-        $opts[CURLOPT_POSTFIELDS] = json_encode(["data"=>[$data]]);
-        $headers[] = "Content-Type: application/json";
-        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-    }
-    curl_setopt_array($ch, $opts);
-    $res = curl_exec($ch); curl_close($ch);
-    $json = json_decode($res,true);
-    log_json("zoho_api_log.json", ["endpoint"=>$endpoint,"method"=>$method,"data"=>$data,"response"=>$json]);
-    return $json;
+    $headers = ["Authorization: Zoho-oauthtoken $token", "Content-Type: application/json"];
+    $ch = curl_init(Z_BASE . '/' . $url);
+    $opts = [CURLOPT_HTTPHEADER=>$headers, CURLOPT_RETURNTRANSFER=>true];
+    
+    if($method==='POST') { $opts[CURLOPT_POST]=true; $opts[CURLOPT_POSTFIELDS]=json_encode($body); }
+    if($method==='PUT') { $opts[CURLOPT_CUSTOMREQUEST]='PUT'; $opts[CURLOPT_POSTFIELDS]=json_encode($body); }
+    
+    curl_setopt_array($ch,$opts);
+    $res=curl_exec($ch); curl_close($ch);
+    return json_decode($res,true);
 }
 
-// ---------- MAIN ----------
+// ---------- 1) Accept webhook ----------
 $encResp = $_POST['encResp'] ?? '';
 if(!$encResp) { echo json_encode(["status"=>"error","message"=>"encResp missing"]); exit; }
-$plain = cca_decrypt($encResp, $WORKING_KEY);
-parse_str($plain,$cc);
-log_json("decrypted_log.json",$cc);
 
-$refNo = $cc['order_id'] ?? null;
+$plain = cca_decrypt($encResp, $WORKING_KEY);
+parse_str($plain, $cc);
+log_file("decrypted_log.json",$cc);
+
+// ---------- 2) Core data ----------
+$order_id      = $cc['order_id'] ?? '';
+$order_status  = strtolower($cc['order_status'] ?? 'failed');
+$amount        = isset($cc['amount']) ? floatval($cc['amount']) : 0.0;
+$payment_mode  = $cc['payment_mode'] ?? '';
 $billing_name  = $cc['billing_name'] ?? '';
 $billing_email = $cc['billing_email'] ?? '';
 $billing_tel   = $cc['billing_tel'] ?? '';
-$order_status  = strtolower($cc['order_status'] ?? 'failed');
-$payment_mode  = $cc['payment_mode'] ?? '';
-$amount        = isset($cc['amount']) ? floatval($cc['amount']) : 0.0;
-$today = date('Y-m-d');
+$today         = date('Y-m-d');
+$stage         = ($order_status==='success' || $order_status==='successful') ? 'Closed Won' : 'Closed Lost';
 
-$stage = ($order_status==='success')?'Closed Won':'Closed Lost';
-
-// ---------- STATUS UPDATE ONLY ----------
-if($refNo && !$billing_name){
-    $status = $stage==='Closed Won'?'captured':'failed';
-    $dealResp = zapi("GET","Deals/search?criteria=(Reference_ID:equals:".rawurlencode($refNo).")");
-    if(!empty($dealResp['data'][0]['id'])){
-        $deal_id = $dealResp['data'][0]['id'];
-        $upd = ["Paymet_Status"=>$status, "Payment_Mode"=>$payment_mode];
-        zapi("PUT","Deals/$deal_id",$upd);
+// ---------- 3) Status Update ----------
+if($order_id){
+    $search_res = zapi('GET', "Deals/search?criteria=(Reference_ID:equals:".rawurlencode($order_id).")");
+    if(!empty($search_res['data'][0]['id'])){
+        $deal_id = $search_res['data'][0]['id'];
+        $upd = [
+            "Paymet_Status" => ($stage==='Closed Won' ? 'captured' : 'failed'),
+            "Payment_Mode" => $payment_mode
+        ];
+        $res = zapi('PUT', "Deals/$deal_id", ["data"=>[$upd]]);
+        log_file("status_update.json",$res);
+        echo json_encode(["status"=>"ok","mode"=>"status_update","deal_id"=>$deal_id]);
+        exit;
     }
-    echo json_encode(["status"=>"ok","mode"=>"status_update","ref"=>$refNo]); exit;
 }
 
-// ---------- FULL AUTOMATION ----------
+// ---------- 4) Full Automation (Create / Update Deal) ----------
 
-// ---------- Contact ----------
-$contact_id=null; $type_of_customer='Fresh';
+// ----- Contact -----
+$contact_id = null;
+$type_of_customer='Fresh';
 if($billing_email){
-    $res = zapi("GET","Contacts/search?criteria=(Email:equals:".rawurlencode($billing_email).")");
-    if(!empty($res['data'][0]['id'])){$contact_id=$res['data'][0]['id']; $type_of_customer='Renewal';}
+    $res = zapi('GET', "Contacts/search?criteria=(Email:equals:".rawurlencode($billing_email).")");
+    if(!empty($res['data'][0]['id'])) { $contact_id=$res['data'][0]['id']; $type_of_customer='Renewal'; }
 }
 if(!$contact_id && $billing_tel){
-    $res = zapi("GET","Contacts/search?criteria=(Phone:equals:".rawurlencode($billing_tel).")");
-    if(!empty($res['data'][0]['id'])){$contact_id=$res['data'][0]['id']; $type_of_customer='Renewal';}
+    $res = zapi('GET', "Contacts/search?criteria=(Phone:equals:".rawurlencode($billing_tel).")");
+    if(!empty($res['data'][0]['id'])) { $contact_id=$res['data'][0]['id']; $type_of_customer='Renewal'; }
 }
 if(!$contact_id){
-    $parts=preg_split('/\s+/',$billing_name);
-    $first=$parts[0]??''; $last=isset($parts[1])?implode(' ',array_slice($parts,1)):'-';
-    $body=["First_Name"=>$first,"Last_Name"=>$last,"Email"=>$billing_email,"Phone"=>$billing_tel];
-    $res = zapi("POST","Contacts",$body);
-    $contact_id=$res['data'][0]['details']['id']??null;
+    $parts = preg_split('/\s+/', $billing_name);
+    $first = $parts[0] ?? '';
+    $last  = isset($parts[1]) ? implode(' ',array_slice($parts,1)) : '-';
+    $body = ["data"=>[["First_Name"=>$first,"Last_Name"=>$last,"Email"=>$billing_email,"Phone"=>$billing_tel]]];
+    $res = zapi('POST', 'Contacts', $body);
+    $contact_id = $res['data'][0]['details']['id'] ?? null;
 }
 
-// ---------- Account ----------
+// ----- Account -----
 $account_id=null;
-$res = zapi("GET","Accounts/search?criteria=(Account_Name:equals:".rawurlencode($billing_name).")");
-if(!empty($res['data'][0]['id'])){$account_id=$res['data'][0]['id'];}
+$res=zapi('GET', "Accounts/search?criteria=(Account_Name:equals:".rawurlencode($billing_name).")");
+if(!empty($res['data'][0]['id'])){ $account_id=$res['data'][0]['id']; }
 else{
-    $body=["Account_Name"=>$billing_name];
-    $res = zapi("POST","Accounts",$body);
-    $account_id=$res['data'][0]['details']['id']??null;
+    $body=["data"=>[["Account_Name"=>$billing_name]]];
+    $res = zapi('POST', 'Accounts', $body);
+    $account_id = $res['data'][0]['details']['id'] ?? null;
 }
 
-// ---------- Subscription Details ----------
+// ----- Subscription Details -----
 $subscription_details=[];
 for($i=1;$i<=5;$i++){
     $paramKey="merchant_param".$i;
     if(!empty($cc[$paramKey])){
-        $parts=explode('|',$cc[$paramKey]);
+        $parts = explode('|',$cc[$paramKey]);
         $subscription_details[]=[
             "Product"=>$parts[1]??'',
             "Period_Days"=>(int)($parts[2]??0),
@@ -139,15 +136,17 @@ for($i=1;$i<=5;$i++){
             "Quantity"=>(int)($parts[6]??1),
             "Price_Before"=>(float)($parts[7]??0),
             "Price_After"=>(float)($parts[8]??0),
-            "Expiry_Date"=>$today
+            "Expiry_Date"=>$today,
+            "Subscription_Numb"=>'',
+            "Sub_ID"=>''
         ];
     }
 }
 
-// ---------- Deal ----------
+// ----- Deal -----
 $deal_fields=[
     "Deal_Name"=>$billing_name,
-    "Reference_ID"=>$refNo?:('ORD_'.time()),
+    "Reference_ID"=>$order_id?:('ORD_'.time()),
     "Amount"=>$amount,
     "Closing_Date"=>$today,
     "Pipeline"=>"Standard (Standard)",
@@ -163,15 +162,16 @@ $deal_fields=[
     "Owner"=>["id"=>"862056000002106001"]
 ];
 
-// ---------- Upsert Deal ----------
-$deal_id=null;
-$search = zapi("GET","Deals/search?criteria=(Reference_ID:equals:".rawurlencode($deal_fields['Reference_ID']).")");
-if(!empty($search['data'][0]['id'])){
-    $deal_id=$search['data'][0]['id'];
-    zapi("PUT","Deals/$deal_id",$deal_fields);
+log_file("zoho_payload.json",$deal_fields);
+
+// Upsert Deal
+$search_res = zapi('GET', "Deals/search?criteria=(Reference_ID:equals:".rawurlencode($deal_fields['Reference_ID']).")");
+if(!empty($search_res['data'][0]['id'])){
+    $deal_id=$search_res['data'][0]['id'];
+    $res = zapi('PUT',"Deals/$deal_id",["data"=>[$deal_fields]]);
 }else{
-    $res = zapi("POST","Deals",$deal_fields);
-    $deal_id=$res['data'][0]['details']['id']??null;
+    $res = zapi('POST','Deals',["data"=>[$deal_fields]]);
+    $deal_id = $res['data'][0]['details']['id'] ?? null;
 }
 
 // ---------- Response ----------
@@ -185,5 +185,3 @@ echo json_encode([
     "account_id"=>$account_id,
     "type_customer"=>$type_of_customer
 ],JSON_PRETTY_PRINT);
-
-?>
