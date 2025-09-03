@@ -136,19 +136,35 @@ if (!$contact_id) {
     $body = json_encode(["data"=>[[
         "First_Name"=>$first, "Last_Name"=>$last, "Email"=>$billing_email, "Phone"=>$billing_tel
     ]]]);
+
     $res = zpost(Z_BASE."/Contacts",$headers,$body);
     $data = json_decode($res,true);
     $contact_id = $data['data'][0]['details']['id'] ?? null;
 }
 
+// ---------- 5.1) Account ----------
+$account_name_value = $billing_name; // Or custom account name
+$account_id = null;
+
+// search account by name
+$res = zget(Z_BASE."/Accounts/search?criteria=(Account_Name:equals:".rawurlencode($account_name_value).")", $headers);
+$data = json_decode($res,true);
+if (!empty($data['data'][0]['id'])) {
+    $account_id = $data['data'][0]['id'];
+} else {
+    // create account if not exists
+    $body = json_encode(["data"=>[["Account_Name"=>$account_name_value]]]);
+    $res = zpost(Z_BASE."/Accounts",$headers,$body);
+    $data = json_decode($res,true);
+    $account_id = $data['data'][0]['details']['id'] ?? null;
+}
+
 // ---------- 6) Build subscription details ----------
 $subscription_details = [];
-
-for ($i = 1; $i <= 5; $i++) {   // ccavenue provides up to 5 merchant_param
+for ($i = 1; $i <= 5; $i++) {
     $paramKey = "merchant_param".$i;
     if (!empty($cc[$paramKey])) {
         $parts = explode('|', $cc[$paramKey]);
-
         $subscription_details[] = [
             "Product"        => $parts[1] ?? '',
             "Period_Days"    => (int)($parts[2] ?? 0),
@@ -165,7 +181,6 @@ for ($i = 1; $i <= 5; $i++) {   // ccavenue provides up to 5 merchant_param
     }
 }
 
-
 // ---------- 7) Build deal ----------
 $deal_fields = [
     "Deal_Name"=>$billing_name,
@@ -181,11 +196,8 @@ $deal_fields = [
     "Payment_Mode"=>$payment_mode,
     "Payment_Status"=>($stage==='Closed Won'?'captured':'failed'),
     "Contact_Name"=>$contact_id ? ["id"=>$contact_id]:null,
-    "Account_Name"     => $billing_name,
-
-    // ✅ Force array of subform rows
+    "Account_Name"=>$account_id ? ["id"=>$account_id] : null,
     "Subscription_Details"=>array_values($subscription_details),
-
     "Owner"=> ["id" => "862056000002106001"]
 ];
 
@@ -216,5 +228,6 @@ echo json_encode([
     "stage"=>$stage,
     "deal_id"=>$deal_id,
     "contact_id"=>$contact_id,
+    "account_id"=>$account_id,
     "type_customer"=>$type_of_customer
 ],JSON_PRETTY_PRINT);
