@@ -114,18 +114,18 @@ $token = zoho_access_token();
 if (!$token) { echo json_encode(['status'=>'error','message'=>'Zoho token missing']); exit; }
 $headers = ["Authorization: Zoho-oauthtoken $token", "Content-Type: application/json"];
 
-// ---------- 5) Detect workflow ----------
-if (isset($cc['merchant_param2']) && !empty($cc['merchant_param2'])) {
-    // Workflow 2: Full Deal creation/upsert
+// ---------- 5) Workflow check ----------
+if (!empty($cc['merchant_param2'])) {
+    // Full deal creation
     handleFullDeal($cc, $order_status, $payment_mode, $today, $headers);
 } else {
-    // Workflow 1: Only update Paymet_Status
-    handlePaymetStatus($refNo, $order_status, $payment_mode, $headers);
+    // Only update payment status
+    handlePaymentStatus($refNo, $order_status, $payment_mode, $headers);
 }
 
 // ---------- Functions ----------
 
-function handlePaymetStatus($refNo, $status, $payment_mode, $headers){
+function handlePaymentStatus($refNo, $status, $payment_mode, $headers){
     if($refNo==='NA') { echo json_encode(['error'=>'refNo missing']); exit; }
 
     $search_url = Z_BASE."/Deals/search?criteria=(Reference_ID:equals:".rawurlencode($refNo).")";
@@ -134,11 +134,11 @@ function handlePaymetStatus($refNo, $status, $payment_mode, $headers){
 
     if(!empty($search['data'][0]['id'])){
         $deal_id = $search['data'][0]['id'];
-        $update_body = json_encode(["data"=>[["Paymet_Status"=>$status,"Payment_Mode"=>$payment_mode]]]);
+        $update_body = json_encode(["data"=>[["Payment_Status"=>$status,"Payment_Mode"=>$payment_mode]]]);
         $res = zput(Z_BASE."/Deals/$deal_id",$headers,$update_body);
         log_file('zoho_update_log.json', $res);
     } else {
-        log_file('zoho_update_log.json', ['error'=>'Deal not found for Paymet_Status update']);
+        log_file('zoho_update_log.json', ['error'=>'Deal not found for Payment_Status update']);
     }
 
     echo json_encode([
@@ -159,7 +159,7 @@ function handleFullDeal($cc, $order_status, $payment_mode, $today, $headers){
     $contact_id = null;
     $type_of_customer='Fresh';
 
-    // Search/Create contact
+    // Search/Create Contact
     if($billing_email){
         $res = zget(Z_BASE."/Contacts/search?criteria=(Email:equals:".rawurlencode($billing_email).")",$headers);
         $data=json_decode($res,true);
@@ -182,18 +182,17 @@ function handleFullDeal($cc, $order_status, $payment_mode, $today, $headers){
 
     // Account
     $account_id=null;
-    $account_name_value=$billing_name;
-    $res=zget(Z_BASE."/Accounts/search?criteria=(Account_Name:equals:".rawurlencode($account_name_value).")",$headers);
+    $res=zget(Z_BASE."/Accounts/search?criteria=(Account_Name:equals:".rawurlencode($billing_name).")",$headers);
     $data=json_decode($res,true);
     if(!empty($data['data'][0]['id'])){$account_id=$data['data'][0]['id'];}
     else{
-        $body=json_encode(["data"=>[["Account_Name"=>$account_name_value]]]);
+        $body=json_encode(["data"=>[["Account_Name"=>$billing_name]]]);
         $res=zpost(Z_BASE."/Accounts",$headers,$body);
         $data=json_decode($res,true);
         $account_id=$data['data'][0]['details']['id']??null;
     }
 
-    // Subscription details
+    // Subscription Details
     $subscription_details=[];
     for($i=1;$i<=5;$i++){
         $paramKey="merchant_param".$i;
@@ -213,10 +212,10 @@ function handleFullDeal($cc, $order_status, $payment_mode, $today, $headers){
         }
     }
 
-    // Deal fields
+    // Deal Fields
     $deal_fields=[
         "Deal_Name"=>$billing_name,
-        "Reference_ID"=>$cc['order_id'] ?? ('ORD_'.time()),
+        "Reference_ID"=>$cc['order_id'] ?? ('ORD'.time()),
         "Amount"=>$amount,
         "Closing_Date"=>$today,
         "Pipeline"=>"Standard (Standard)",
@@ -234,7 +233,7 @@ function handleFullDeal($cc, $order_status, $payment_mode, $today, $headers){
 
     log_file('zoho_payload.json',$deal_fields);
 
-    // Upsert deal
+    // Upsert Deal
     $search_url = Z_BASE."/Deals/search?criteria=(Reference_ID:equals:".rawurlencode($deal_fields['Reference_ID']).")";
     $search_res = zget($search_url,$headers);
     $search = json_decode($search_res,true);
@@ -243,12 +242,14 @@ function handleFullDeal($cc, $order_status, $payment_mode, $today, $headers){
         $deal_id=$search['data'][0]['id'];
         $body=json_encode(["data"=>[$deal_fields]]);
         $res=zput(Z_BASE."/Deals/$deal_id",$headers,$body);
-    }else{
+    } else {
         $body=json_encode(["data"=>[$deal_fields]]);
         $res=zpost(Z_BASE."/Deals",$headers,$body);
         $out=json_decode($res,true);
         $deal_id=$out['data'][0]['details']['id']??null;
     }
+
+    log_file('zoho_api_response.json',$res);
 
     echo json_encode([
         "status"=>"ok",
