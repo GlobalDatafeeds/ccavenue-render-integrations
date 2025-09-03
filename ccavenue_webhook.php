@@ -68,7 +68,7 @@ if(!$billing_name && $refNo){
     $res=zget($search_url,$headers); $data=json_decode($res,true);
     if(!empty($data['data'][0]['id'])){
         $deal_id=$data['data'][0]['id'];
-        $body=json_encode(["data"=>[["Payment_Status"=>$status,"Payment_Mode"=>$paymentMode]]]);
+        $body=json_encode(["data"=>[["Paymet_Status"=>$status,"Payment_Mode"=>$paymentMode]]]);
         $upd=zput(Z_BASE."/Deals/$deal_id",$headers,$body);
         log_file("status_update.json",$upd);
     }
