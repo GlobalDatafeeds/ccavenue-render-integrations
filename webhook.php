@@ -1,21 +1,18 @@
 <?php
 /*******************************************
  * UNIFIED WEBHOOK (Manual Update + Website Order)
- * - Keeps the same field/API names you use:
- *   • Manual update writes: Paymet_Status, Payment_Mode
- *   • Website order writes: Payment_Status, Payment_Mode
+ * - Keeps the same field/API names you use
  *******************************************/
 
 // ---------------- CONFIG ----------------
-$WORKING_KEY = 'B410D0FB52051326F8B5F33B491A9230'; // CCAvenue working key
+$WORKING_KEY = 'B410D0FB52051326F8B5F33B491A9230';
 
 define('Z_CLIENT_ID', '1000.QT7DOYHYASD7JCOEOIW41AOXO1I3NC');
 define('Z_CLIENT_SECRET', '3cdc3a3ccb8411df5cb4dfbe10f8b5a9c43c43ec06');
 define('Z_REFRESH_TOKEN', '1000.49e678cd6058a884a5da991f79238c67.907c8e04ac8dd556021b441423b97b14');
-
 define('Z_BASE', 'https://www.zohoapis.in/crm/v2');
 
-// ---------------- HELPERS (shared) ----------------
+// ---------------- HELPERS ----------------
 function log_file($name, $payload) {
     @file_put_contents($name, is_string($payload) ? $payload : json_encode($payload, JSON_PRETTY_PRINT));
 }
@@ -33,16 +30,12 @@ function decrypt_ccavenue($encryptedText, $workingKey) {
     return openssl_decrypt($encryptedText, 'AES-128-CBC', $key, OPENSSL_RAW_DATA, $iv);
 }
 
-// ---- Zoho token helpers (both kept to mirror your originals) ----
-function getZohoAccessToken() { // used in Manual Update branch (your first file)
-    $client_id = '1000.QT7DOYHYASD7JCOEOIW41AOXO1I3NC';
-    $client_secret = '3cdc3a3ccb8411df5cb4dfbe10f8b5a9c43c43ec06';
-    $refresh_token = '1000.49e678cd6058a884a5da991f79238c67.907c8e04ac8dd556021b441423b97b14';
-
+// Zoho token helpers
+function getZohoAccessToken() {
     $postData = http_build_query([
-        'refresh_token' => $refresh_token,
-        'client_id' => $client_id,
-        'client_secret' => $client_secret,
+        'refresh_token' => Z_REFRESH_TOKEN,
+        'client_id' => Z_CLIENT_ID,
+        'client_secret' => Z_CLIENT_SECRET,
         'grant_type' => 'refresh_token'
     ]);
 
@@ -56,27 +49,8 @@ function getZohoAccessToken() { // used in Manual Update branch (your first file
     $data = json_decode($response, true);
     return $data['access_token'] ?? null;
 }
-function zoho_access_token() { // used in Website Order branch (your second file)
-    $post = http_build_query([
-        'refresh_token' => Z_REFRESH_TOKEN,
-        'client_id' => Z_CLIENT_ID,
-        'client_secret' => Z_CLIENT_SECRET,
-        'grant_type' => 'refresh_token'
-    ]);
-    $ch = curl_init('https://accounts.zoho.in/oauth/v2/token');
-    curl_setopt_array($ch, [
-        CURLOPT_POST => true,
-        CURLOPT_POSTFIELDS => $post,
-        CURLOPT_RETURNTRANSFER => true,
-        CURLOPT_TIMEOUT => 20
-    ]);
-    $res = curl_exec($ch);
-    curl_close($ch);
-    $data = json_decode($res, true);
-    return $data['access_token'] ?? null;
-}
 
-// ---- Zoho request helpers (from your second file) ----
+// Zoho request helpers
 function zget($url, $headers) {
     $ch = curl_init($url);
     curl_setopt_array($ch, [
@@ -123,25 +97,20 @@ if (!$encResp) {
     exit;
 }
 
-// ---------------- 2) Decrypt (shared) ----------------
+// ---------------- 2) Decrypt ----------------
 $plain = decrypt_ccavenue($encResp, $WORKING_KEY);
 parse_str($plain, $cc);
 log_file('decrypted_log.json', $cc);
 
 // ---------------- Decide MODE ----------------
-// If merchant_param1 or inv_mer_reference_no present -> MANUAL UPDATE (your first code behavior)
-// Else -> WEBSITE ORDER (your second code behavior)
-$refNo = $cc['merchant_param1'] ?? $cc['inv_mer_reference_no'] ?? 'NA';
-
-// ======================================================================
-// MODE A: MANUAL STATUS UPDATE (exactly like your first webhook file)
-// ======================================================================
-if (!empty($refNo) && $refNo !== 'NA') {
+// Manual update only if inv_mer_reference_no exists
+$refNo = $cc['inv_mer_reference_no'] ?? '';
+if (!empty($refNo)) {
+    // ---------------- MANUAL UPDATE ----------------
     $statusRaw = strtolower($cc['order_status'] ?? 'Unknown');
     $status = $statusRaw === 'success' ? 'success' : 'failed';
     $paymentMode = $cc['payment_mode'] ?? 'Unknown';
 
-    // Immediate echo (same as your first file)
     echo json_encode([
         "status" => "received",
         "reference_no" => $refNo,
@@ -149,61 +118,38 @@ if (!empty($refNo) && $refNo !== 'NA') {
         "payment_mode" => $paymentMode
     ]);
 
-    // Token (first file style)
     $access_token = getZohoAccessToken();
     if (!$access_token) {
-        file_put_contents("zoho_error.json", json_encode(["error" => "Missing refNo or access_token"]));
+        file_put_contents("zoho_error.json", json_encode(["error" => "Missing access_token"]));
         exit;
     }
 
     $module = "Deals";
-    $search_url = "https://zohoapis.in/crm/v2/$module/search?criteria=(Reference_ID:equals:$refNo)";
+    $search_url = Z_BASE."/Deals/search?criteria=(Reference_ID:equals:$refNo)";
     $headers = [
         "Authorization: Zoho-oauthtoken $access_token",
         "Content-Type: application/json"
     ];
 
-    // Search Deal
-    $ch = curl_init();
-    curl_setopt($ch, CURLOPT_URL, $search_url);
-    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-    $search_response = curl_exec($ch);
-    curl_close($ch);
+    $search_response = zget($search_url, $headers);
     file_put_contents("zoho_search_log.json", $search_response);
-
     $search_result = json_decode($search_response, true);
+
     if (isset($search_result['data'][0]['id'])) {
         $deal_id = $search_result['data'][0]['id'];
-
-        // Update Paymet_Status + Payment_Mode (exact names)
-        $update_url = "https://zohoapis.in/crm/v2/$module/$deal_id";
         $update_body = json_encode([
             "data" => [[
                 "Paymet_Status" => $status,
                 "Payment_Mode" => $paymentMode
             ]]
         ]);
-
-        $ch = curl_init();
-        curl_setopt($ch, CURLOPT_URL, $update_url);
-        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "PUT");
-        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-        curl_setopt($ch, CURLOPT_POSTFIELDS, $update_body);
-        $update_response = curl_exec($ch);
-        curl_close($ch);
-
+        $update_response = zput(Z_BASE."/Deals/$deal_id", $headers, $update_body);
         file_put_contents("zoho_update_log.json", $update_response);
     }
-    exit; // stop here so Website flow does not run
+    exit;
 }
 
-// ======================================================================
-// MODE B: WEBSITE ORDER CREATE/UPSERT (exactly like your second webhook)
-// ======================================================================
-
-// ---------- 3) Core fields ----------
+// ---------------- WEBSITE ORDER ----------------
 $order_id      = $cc['order_id'] ?? '';
 $order_status  = strtolower($cc['order_status'] ?? 'failed');
 $amount        = isset($cc['amount']) ? floatval($cc['amount']) : 0.0;
@@ -212,84 +158,73 @@ $billing_email = trim($cc['billing_email'] ?? '');
 $billing_tel   = trim($cc['billing_tel'] ?? '');
 $payment_mode  = $cc['payment_mode'] ?? '';
 $today         = date('Y-m-d');
+$stage = ($order_status==='success' || $order_status==='successful')?'Closed Won':'Closed Lost';
 
-$stage = ($order_status === 'success' || $order_status === 'successful') ? 'Closed Won' : 'Closed Lost';
-
-// ---------- 4) Zoho access ----------
-$token = zoho_access_token();
+$token = getZohoAccessToken();
 if (!$token) { echo json_encode(['status'=>'error','message'=>'Zoho token missing']); exit; }
 $headers = ["Authorization: Zoho-oauthtoken $token", "Content-Type: application/json"];
 
-// ---------- 5) Contact ----------
+// ---------- Contact ----------
 $contact_id = null;
 $type_of_customer = 'Fresh';
-
-// search/create contact
 if ($billing_email) {
-    $res = zget(Z_BASE."/Contacts/search?criteria=(Email:equals:".rawurlencode($billing_email).")", $headers);
+    $res = zget(Z_BASE."/Contacts/search?criteria=(Email:equals:".rawurlencode($billing_email).")",$headers);
     $data = json_decode($res,true);
-    if (!empty($data['data'][0]['id'])) { $contact_id = $data['data'][0]['id']; $type_of_customer='Renewal'; }
+    if(!empty($data['data'][0]['id'])){ $contact_id=$data['data'][0]['id']; $type_of_customer='Renewal'; }
 }
-if (!$contact_id && $billing_tel) {
-    $res = zget(Z_BASE."/Contacts/search?criteria=(Phone:equals:".rawurlencode($billing_tel).")", $headers);
+if(!$contact_id && $billing_tel){
+    $res = zget(Z_BASE."/Contacts/search?criteria=(Phone:equals:".rawurlencode($billing_tel).")",$headers);
     $data = json_decode($res,true);
-    if (!empty($data['data'][0]['id'])) { $contact_id = $data['data'][0]['id']; $type_of_customer='Renewal'; }
+    if(!empty($data['data'][0]['id'])){ $contact_id=$data['data'][0]['id']; $type_of_customer='Renewal'; }
 }
-if (!$contact_id) {
+if(!$contact_id){
     $parts = preg_split('/\s+/', trim($billing_name));
-    $first = $parts[0] ?? ''; $last = isset($parts[1]) ? implode(' ',array_slice($parts,1)) : '-';
-    $body = json_encode(["data"=>[[
-        "First_Name"=>$first, "Last_Name"=>$last, "Email"=>$billing_email, "Phone"=>$billing_tel
-    ]]]);
-
+    $first=$parts[0]??''; $last=isset($parts[1])?implode(' ',array_slice($parts,1)):'-';
+    $body=json_encode(["data"=>[["First_Name"=>$first,"Last_Name"=>$last,"Email"=>$billing_email,"Phone"=>$billing_tel]]]);
     $res = zpost(Z_BASE."/Contacts",$headers,$body);
-    $data = json_decode($res,true);
-    $contact_id = $data['data'][0]['details']['id'] ?? null;
+    $data=json_decode($res,true);
+    $contact_id=$data['data'][0]['details']['id']??null;
 }
 
-// ---------- 5.1) Account ----------
-$account_name_value = $billing_name; // Or custom account name
-$account_id = null;
-
-// search account by name
-$res = zget(Z_BASE."/Accounts/search?criteria=(Account_Name:equals:".rawurlencode($account_name_value).")", $headers);
-$data = json_decode($res,true);
-if (!empty($data['data'][0]['id'])) {
-    $account_id = $data['data'][0]['id'];
-} else {
-    // create account if not exists
-    $body = json_encode(["data"=>[["Account_Name"=>$account_name_value]]]);
+// ---------- Account ----------
+$account_name_value = $billing_name;
+$account_id=null;
+$res = zget(Z_BASE."/Accounts/search?criteria=(Account_Name:equals:".rawurlencode($account_name_value).")",$headers);
+$data=json_decode($res,true);
+if(!empty($data['data'][0]['id'])){ $account_id=$data['data'][0]['id']; }
+else{
+    $body=json_encode(["data"=>[["Account_Name"=>$account_name_value]]]);
     $res = zpost(Z_BASE."/Accounts",$headers,$body);
-    $data = json_decode($res,true);
-    $account_id = $data['data'][0]['details']['id'] ?? null;
+    $data=json_decode($res,true);
+    $account_id=$data['data'][0]['details']['id']??null;
 }
 
-// ---------- 6) Build subscription details ----------
-$subscription_details = [];
-for ($i = 1; $i <= 5; $i++) {
-    $paramKey = "merchant_param".$i;
-    if (!empty($cc[$paramKey])) {
-        $parts = explode('|', $cc[$paramKey]);
-        $subscription_details[] = [
-            "Product"        => $parts[1] ?? '',
-            "Period_Days"    => (int)($parts[2] ?? 0),
-            "Exchanges"      => $parts[3] ?? '',
-            "Plan_Category"  => $parts[4] ?? '',
-            "Extra1"         => $parts[5] ?? '',
-            "Quantity"       => (int)($parts[6] ?? 1),
-            "Price_Before"   => (float)($parts[7] ?? 0),
-            "Price_After"    => (float)($parts[8] ?? 0),
-            "Expiry_Date"    => $today,
-            "Subscription_Numb" => '',
-            "Sub_ID"            => ''
+// ---------- Subscription Details ----------
+$subscription_details=[];
+for($i=1;$i<=5;$i++){
+    $paramKey="merchant_param".$i;
+    if(!empty($cc[$paramKey])){
+        $parts=explode('|',$cc[$paramKey]);
+        $subscription_details[]=[
+            "Product"=>$parts[1]??'',
+            "Period_Days"=>(int)($parts[2]??0),
+            "Exchanges"=>$parts[3]??'',
+            "Plan_Category"=>$parts[4]??'',
+            "Extra1"=>$parts[5]??'',
+            "Quantity"=>(int)($parts[6]??1),
+            "Price_Before"=>(float)($parts[7]??0),
+            "Price_After"=>(float)($parts[8]??0),
+            "Expiry_Date"=>$today,
+            "Subscription_Numb"=>'',
+            "Sub_ID"=>''
         ];
     }
 }
 
-// ---------- 7) Build deal ----------
-$deal_fields = [
+// ---------- Deal ----------
+$deal_fields=[
     "Deal_Name"=>$billing_name,
-    "Reference_ID"=>$order_id ?: ('ORD_'.time()),
+    "Reference_ID"=>$order_id?:('ORD_'.time()),
     "Amount"=>$amount,
     "Closing_Date"=>$today,
     "Pipeline"=>"Standard (Standard)",
@@ -300,36 +235,29 @@ $deal_fields = [
     "Type_of_Customer"=>$type_of_customer,
     "Payment_Mode"=>$payment_mode,
     "Payment_Status"=>($stage==='Closed Won'?'captured':'failed'),
-    "Contact_Name"=>$contact_id ? ["id"=>$contact_id]:null,
-    "Account_Name"=>$account_id ? ["id"=>$account_id] : null,
-
-    // ✅ Force array of subform rows
+    "Contact_Name"=>$contact_id?["id"=>$contact_id]:null,
+    "Account_Name"=>$account_id?["id"=>$account_id]:null,
     "Subscription_Details"=>array_values($subscription_details),
-
-    "Owner"=> ["id" => "862056000002106001"]
+    "Owner"=>["id"=>"862056000002106001"]
 ];
+log_file('zoho_payload.json',$deal_fields);
 
-// Log payload before sending to Zoho
-log_file('zoho_payload.json', $deal_fields);
-
-// ---------- 8) Upsert deal ----------
-$deal_id = null;
+// ---------- Upsert Deal ----------
+$deal_id=null;
 $search_url = Z_BASE."/Deals/search?criteria=(Reference_ID:equals:".rawurlencode($deal_fields['Reference_ID']).")";
 $search_res = zget($search_url,$headers);
 $search = json_decode($search_res,true);
 
 if(!empty($search['data'][0]['id'])){
     $deal_id=$search['data'][0]['id'];
-    $body = json_encode(["data"=>[$deal_fields]]);
-    $res = zput(Z_BASE."/Deals/$deal_id",$headers,$body);
+    $res=zput(Z_BASE."/Deals/$deal_id",$headers,json_encode(["data"=>[$deal_fields]]));
 }else{
-    $body = json_encode(["data"=>[$deal_fields]]);
-    $res = zpost(Z_BASE."/Deals",$headers,$body);
-    $out = json_decode($res,true);
-    $deal_id = $out['data'][0]['details']['id'] ?? null;
+    $res=zpost(Z_BASE."/Deals",$headers,json_encode(["data"=>[$deal_fields]]));
+    $out=json_decode($res,true);
+    $deal_id=$out['data'][0]['details']['id']??null;
 }
 
-// ---------- 9) Response ----------
+// ---------- Response ----------
 echo json_encode([
     "status"=>"ok",
     "order_id"=>$deal_fields['Reference_ID'],
