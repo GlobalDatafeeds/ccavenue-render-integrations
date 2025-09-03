@@ -98,15 +98,19 @@ if (!$encResp) {
 
 // ---------- 2) Decrypt ----------
 $plain = cca_decrypt($encResp, $WORKING_KEY);
+if (!$plain) {
+    log_file('webhook_error.json', ['error'=>'Decryption failed', 'encResp'=>$encResp]);
+    echo json_encode(['status'=>'error','message'=>'Decryption failed']);
+    exit;
+}
 parse_str($plain, $cc);
 log_file('decrypted_log.json', $cc);
 
 // ---------- 3) Core fields ----------
-$order_id      = $cc['order_id'] ?? '';
+$order_id      = $cc['order_id'] ?? $cc['merchant_param1'] ?? 'NA';
 $order_status  = strtolower($cc['order_status'] ?? 'failed');
 $order_status  = ($order_status==='success' || $order_status==='successful') ? 'success' : 'failed';
-$payment_mode  = $cc['payment_mode'] ?? '';
-$refNo         = $cc['merchant_param1'] ?? 'NA';
+$payment_mode  = $cc['payment_mode'] ?? 'Unknown';
 $today         = date('Y-m-d');
 
 // ---------- 4) Zoho access ----------
@@ -114,20 +118,19 @@ $token = zoho_access_token();
 if (!$token) { echo json_encode(['status'=>'error','message'=>'Zoho token missing']); exit; }
 $headers = ["Authorization: Zoho-oauthtoken $token", "Content-Type: application/json"];
 
-// ---------- 5) Detect workflow ----------
-if (isset($cc['merchant_param2']) && !empty($cc['merchant_param2'])) {
-    // Workflow 2: Full Deal creation/upsert
-    handleFullDeal($cc, $order_status, $payment_mode, $today, $headers);
-} else {
-    // Workflow 1: Only update Paymet_Status
-    handlePaymetStatus($refNo, $order_status, $payment_mode, $headers);
+// ---------- 5) Update payment status ----------
+if($order_id !== 'NA') {
+    handlePaymetStatus($order_id, $order_status, $payment_mode, $headers);
 }
 
-// ---------- Functions ----------
+// ---------- 6) Handle full deal if info exists ----------
+if(!empty($cc['merchant_param2']) && strpos($cc['merchant_param2'],'|')!==false){
+    handleFullDeal($cc, $order_status, $payment_mode, $today, $headers);
+}
+
+// ---------- FUNCTIONS ----------
 
 function handlePaymetStatus($refNo, $status, $payment_mode, $headers){
-    if($refNo==='NA') { echo json_encode(['error'=>'refNo missing']); exit; }
-
     $search_url = Z_BASE."/Deals/search?criteria=(Reference_ID:equals:".rawurlencode($refNo).")";
     $search_res = zget($search_url,$headers);
     $search = json_decode($search_res,true);
@@ -138,15 +141,8 @@ function handlePaymetStatus($refNo, $status, $payment_mode, $headers){
         $res = zput(Z_BASE."/Deals/$deal_id",$headers,$update_body);
         log_file('zoho_update_log.json', $res);
     } else {
-        log_file('zoho_update_log.json', ['error'=>'Deal not found for Paymet_Status update']);
+        log_file('zoho_update_log.json', ['error'=>'Deal not found for Paymet_Status update', 'refNo'=>$refNo]);
     }
-
-    echo json_encode([
-        "status"=>"ok",
-        "order_id"=>$refNo,
-        "payment_status"=>$status,
-        "payment_mode"=>$payment_mode
-    ]);
 }
 
 function handleFullDeal($cc, $order_status, $payment_mode, $today, $headers){
@@ -172,8 +168,7 @@ function handleFullDeal($cc, $order_status, $payment_mode, $today, $headers){
     }
     if(!$contact_id && $billing_name){
         $parts=preg_split('/\s+/',$billing_name);
-        $first=$parts[0]??'';
-        $last=isset($parts[1])?implode(' ',array_slice($parts,1)):'-';
+        $first=$parts[0]??''; $last=isset($parts[1])?implode(' ',array_slice($parts,1)):'-';
         $body=json_encode(["data"=>[["First_Name"=>$first,"Last_Name"=>$last,"Email"=>$billing_email,"Phone"=>$billing_tel]]]);
         $res=zpost(Z_BASE."/Contacts",$headers,$body);
         $data=json_decode($res,true);
@@ -195,28 +190,29 @@ function handleFullDeal($cc, $order_status, $payment_mode, $today, $headers){
 
     // Subscription details
     $subscription_details=[];
-    for($i=1;$i<=5;$i++){
-        $paramKey="merchant_param".$i;
-        if(!empty($cc[$paramKey])){
-            $parts=explode('|',$cc[$paramKey]);
-            $subscription_details[]=[
-                "Product"=>$parts[1]??'',
-                "Period_Days"=>(int)($parts[2]??0),
-                "Exchanges"=>$parts[3]??'',
-                "Plan_Category"=>$parts[4]??'',
-                "Extra1"=>$parts[5]??'',
-                "Quantity"=>(int)($parts[6]??1),
-                "Price_Before"=>(float)($parts[7]??0),
-                "Price_After"=>(float)($parts[8]??0),
-                "Expiry_Date"=>$today
-            ];
+    foreach($cc as $key=>$value){
+        if(strpos($key,'merchant_param')===0 && !empty($value)){
+            $parts=explode('|',$value);
+            if(count($parts)>=2){
+                $subscription_details[]=[
+                    "Product"=>$parts[1]??'',
+                    "Period_Days"=>(int)($parts[2]??0),
+                    "Exchanges"=>$parts[3]??'',
+                    "Plan_Category"=>$parts[4]??'',
+                    "Extra1"=>$parts[5]??'',
+                    "Quantity"=>(int)($parts[6]??1),
+                    "Price_Before"=>(float)($parts[7]??0),
+                    "Price_After"=>(float)($parts[8]??0),
+                    "Expiry_Date"=>$today
+                ];
+            }
         }
     }
 
     // Deal fields
     $deal_fields=[
         "Deal_Name"=>$billing_name,
-        "Reference_ID"=>$cc['order_id'] ?? ('ORD_'.time()),
+        "Reference_ID"=>$cc['order_id']??('ORD_'.time()),
         "Amount"=>$amount,
         "Closing_Date"=>$today,
         "Pipeline"=>"Standard (Standard)",
@@ -243,7 +239,7 @@ function handleFullDeal($cc, $order_status, $payment_mode, $today, $headers){
         $deal_id=$search['data'][0]['id'];
         $body=json_encode(["data"=>[$deal_fields]]);
         $res=zput(Z_BASE."/Deals/$deal_id",$headers,$body);
-    }else{
+    } else {
         $body=json_encode(["data"=>[$deal_fields]]);
         $res=zpost(Z_BASE."/Deals",$headers,$body);
         $out=json_decode($res,true);
@@ -259,3 +255,4 @@ function handleFullDeal($cc, $order_status, $payment_mode, $today, $headers){
         "payment_status"=>$order_status
     ]);
 }
+?>
