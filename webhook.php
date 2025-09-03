@@ -1,5 +1,12 @@
 <?php
-// ---------- CONFIG ----------
+/*******************************************
+ * UNIFIED WEBHOOK (Manual Update + Website Order)
+ * - Keeps the same field/API names you use:
+ *   • Manual update writes: Paymet_Status, Payment_Mode
+ *   • Website order writes: Payment_Status, Payment_Mode
+ *******************************************/
+
+// ---------------- CONFIG ----------------
 $WORKING_KEY = 'B410D0FB52051326F8B5F33B491A9230'; // CCAvenue working key
 
 define('Z_CLIENT_ID', '1000.QT7DOYHYASD7JCOEOIW41AOXO1I3NC');
@@ -8,11 +15,10 @@ define('Z_REFRESH_TOKEN', '1000.49e678cd6058a884a5da991f79238c67.907c8e04ac8dd55
 
 define('Z_BASE', 'https://www.zohoapis.in/crm/v2');
 
-// ---------- Helpers ----------
+// ---------------- HELPERS (shared) ----------------
 function log_file($name, $payload) {
     @file_put_contents($name, is_string($payload) ? $payload : json_encode($payload, JSON_PRETTY_PRINT));
 }
-
 function hextobin($hexString) {
     $bin = "";
     for ($i = 0; $i < strlen($hexString); $i += 2) {
@@ -20,15 +26,37 @@ function hextobin($hexString) {
     }
     return $bin;
 }
-
-function cca_decrypt($encryptedText, $workingKey) {
+function decrypt_ccavenue($encryptedText, $workingKey) {
     $key = hextobin(md5($workingKey));
     $iv  = pack("C*", ...range(0, 15));
     $encryptedText = hextobin($encryptedText);
     return openssl_decrypt($encryptedText, 'AES-128-CBC', $key, OPENSSL_RAW_DATA, $iv);
 }
 
-function zoho_access_token() {
+// ---- Zoho token helpers (both kept to mirror your originals) ----
+function getZohoAccessToken() { // used in Manual Update branch (your first file)
+    $client_id = '1000.QT7DOYHYASD7JCOEOIW41AOXO1I3NC';
+    $client_secret = '3cdc3a3ccb8411df5cb4dfbe10f8b5a9c43c43ec06';
+    $refresh_token = '1000.49e678cd6058a884a5da991f79238c67.907c8e04ac8dd556021b441423b97b14';
+
+    $postData = http_build_query([
+        'refresh_token' => $refresh_token,
+        'client_id' => $client_id,
+        'client_secret' => $client_secret,
+        'grant_type' => 'refresh_token'
+    ]);
+
+    $ch = curl_init("https://accounts.zoho.in/oauth/v2/token");
+    curl_setopt($ch, CURLOPT_POST, true);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    $response = curl_exec($ch);
+    curl_close($ch);
+
+    $data = json_decode($response, true);
+    return $data['access_token'] ?? null;
+}
+function zoho_access_token() { // used in Website Order branch (your second file)
     $post = http_build_query([
         'refresh_token' => Z_REFRESH_TOKEN,
         'client_id' => Z_CLIENT_ID,
@@ -48,6 +76,7 @@ function zoho_access_token() {
     return $data['access_token'] ?? null;
 }
 
+// ---- Zoho request helpers (from your second file) ----
 function zget($url, $headers) {
     $ch = curl_init($url);
     curl_setopt_array($ch, [
@@ -59,7 +88,6 @@ function zget($url, $headers) {
     curl_close($ch);
     return $res;
 }
-
 function zpost($url, $headers, $body) {
     $ch = curl_init($url);
     curl_setopt_array($ch, [
@@ -73,7 +101,6 @@ function zpost($url, $headers, $body) {
     curl_close($ch);
     return $res;
 }
-
 function zput($url, $headers, $body) {
     $ch = curl_init($url);
     curl_setopt_array($ch, [
@@ -88,15 +115,93 @@ function zput($url, $headers, $body) {
     return $res;
 }
 
-// ---------- 1) Accept webhook ----------
+// ---------------- 1) Accept webhook ----------------
 $encResp = $_POST['encResp'] ?? '';
 log_file('webhook_log.json', $_POST);
-if (!$encResp) { echo json_encode(["status"=>"error","message"=>"encResp missing"]); exit; }
+if (!$encResp) {
+    echo json_encode(["status" => "error", "message" => "encResp not found"]);
+    exit;
+}
 
-// ---------- 2) Decrypt ----------
-$plain = cca_decrypt($encResp, $WORKING_KEY);
+// ---------------- 2) Decrypt (shared) ----------------
+$plain = decrypt_ccavenue($encResp, $WORKING_KEY);
 parse_str($plain, $cc);
 log_file('decrypted_log.json', $cc);
+
+// ---------------- Decide MODE ----------------
+// If merchant_param1 or inv_mer_reference_no present -> MANUAL UPDATE (your first code behavior)
+// Else -> WEBSITE ORDER (your second code behavior)
+$refNo = $cc['merchant_param1'] ?? $cc['inv_mer_reference_no'] ?? 'NA';
+
+// ======================================================================
+// MODE A: MANUAL STATUS UPDATE (exactly like your first webhook file)
+// ======================================================================
+if (!empty($refNo) && $refNo !== 'NA') {
+    $statusRaw = strtolower($cc['order_status'] ?? 'Unknown');
+    $status = $statusRaw === 'success' ? 'success' : 'failed';
+    $paymentMode = $cc['payment_mode'] ?? 'Unknown';
+
+    // Immediate echo (same as your first file)
+    echo json_encode([
+        "status" => "received",
+        "reference_no" => $refNo,
+        "order_status" => $status,
+        "payment_mode" => $paymentMode
+    ]);
+
+    // Token (first file style)
+    $access_token = getZohoAccessToken();
+    if (!$access_token) {
+        file_put_contents("zoho_error.json", json_encode(["error" => "Missing refNo or access_token"]));
+        exit;
+    }
+
+    $module = "Deals";
+    $search_url = "https://zohoapis.in/crm/v2/$module/search?criteria=(Reference_ID:equals:$refNo)";
+    $headers = [
+        "Authorization: Zoho-oauthtoken $access_token",
+        "Content-Type: application/json"
+    ];
+
+    // Search Deal
+    $ch = curl_init();
+    curl_setopt($ch, CURLOPT_URL, $search_url);
+    curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+    curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+    $search_response = curl_exec($ch);
+    curl_close($ch);
+    file_put_contents("zoho_search_log.json", $search_response);
+
+    $search_result = json_decode($search_response, true);
+    if (isset($search_result['data'][0]['id'])) {
+        $deal_id = $search_result['data'][0]['id'];
+
+        // Update Paymet_Status + Payment_Mode (exact names)
+        $update_url = "https://zohoapis.in/crm/v2/$module/$deal_id";
+        $update_body = json_encode([
+            "data" => [[
+                "Paymet_Status" => $status,
+                "Payment_Mode" => $paymentMode
+            ]]
+        ]);
+
+        $ch = curl_init();
+        curl_setopt($ch, CURLOPT_URL, $update_url);
+        curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "PUT");
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $update_body);
+        $update_response = curl_exec($ch);
+        curl_close($ch);
+
+        file_put_contents("zoho_update_log.json", $update_response);
+    }
+    exit; // stop here so Website flow does not run
+}
+
+// ======================================================================
+// MODE B: WEBSITE ORDER CREATE/UPSERT (exactly like your second webhook)
+// ======================================================================
 
 // ---------- 3) Core fields ----------
 $order_id      = $cc['order_id'] ?? '';
@@ -197,7 +302,10 @@ $deal_fields = [
     "Payment_Status"=>($stage==='Closed Won'?'captured':'failed'),
     "Contact_Name"=>$contact_id ? ["id"=>$contact_id]:null,
     "Account_Name"=>$account_id ? ["id"=>$account_id] : null,
+
+    // ✅ Force array of subform rows
     "Subscription_Details"=>array_values($subscription_details),
+
     "Owner"=> ["id" => "862056000002106001"]
 ];
 
