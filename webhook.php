@@ -1,9 +1,4 @@
 <?php
-/*******************************************
- * UNIFIED WEBHOOK (Manual Update + Website Order)
- * - Keeps the same field/API names you use
- *******************************************/
-
 // ---------------- CONFIG ----------------
 $WORKING_KEY = 'B410D0FB52051326F8B5F33B491A9230';
 
@@ -103,7 +98,6 @@ parse_str($plain, $cc);
 log_file('decrypted_log.json', $cc);
 
 // ---------------- Decide MODE ----------------
-// Manual update only if inv_mer_reference_no exists
 $refNo = $cc['inv_mer_reference_no'] ?? '';
 if (!empty($refNo)) {
     // ---------------- MANUAL UPDATE ----------------
