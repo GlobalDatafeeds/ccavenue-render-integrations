@@ -1,5 +1,5 @@
 <?php
-$working_key = 'B410D0FB52051326F8B5F33B491A9230';
+$working_key = 'D274F7613B83E3BCC204741394645086';
 
 $encResp = $_POST['encResp'] ?? '';
 file_put_contents("webhook_log.json", json_encode($_POST));
