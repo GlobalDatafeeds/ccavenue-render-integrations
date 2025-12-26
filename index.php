@@ -49,8 +49,8 @@ $responseData = json_decode($decrypted, true);
 echo json_encode([
     "status" => $status,
     "tiny_url" => $responseData['tiny_url'] ?? '',
-    "full_response" => $responseData,
-				 "enc_Request"=>$enc_response
+    "full_response" => $responseData
+				
 				 
 				 
 ]);
