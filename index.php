@@ -13,7 +13,16 @@ if (!$input || !is_array($input)) {
     exit;
 }
 
-$merchant_data = json_encode($input);
+
+$merchant_data =
+    "merchant_id=XXXX" .
+    "&invoice_number=" . $input['merchant_reference_no'] .
+    "&invoice_date=" . date("d-m-Y") .
+    "&amount=" . $input['amount'] .
+    "&currency=INR" .
+    "&customer_name=" . urlencode($input['customer_name']) .
+    "&customer_email=" . urlencode($input['customer_email_id']);
+
 $enc_request = encrypt($merchant_data, $working_key);
 
 $final_data = "request_type=JSON&access_code=$access_code&command=generateQuickInvoice&version=1.2&response_type=JSON&enc_request=$enc_request";
@@ -51,17 +60,31 @@ echo json_encode([
 ]);
 
 function encrypt($plainText, $key) {
-    $key = hextobin(md5($key));
-    $initVector = pack("C*", ...range(0, 15));
-    return bin2hex(openssl_encrypt($plainText, 'AES-128-CBC', $key, OPENSSL_RAW_DATA, $initVector));
+    $secretKey = pack('H*', md5($key));
+    $initVector = pack('H*', md5($key));
+    return bin2hex(openssl_encrypt(
+        $plainText,
+        'AES-128-CBC',
+        $secretKey,
+        OPENSSL_RAW_DATA,
+        $initVector
+    ));
 }
 
+
 function decrypt($encryptedText, $key) {
-    $key = hextobin(md5($key));
-    $initVector = pack("C*", ...range(0, 15));
-    $encryptedText = hextobin($encryptedText);
-    return openssl_decrypt($encryptedText, 'AES-128-CBC', $key, OPENSSL_RAW_DATA, $initVector);
+    $secretKey = pack('H*', md5($key));
+    $initVector = pack('H*', md5($key));
+    $encryptedText = hex2bin($encryptedText);
+    return openssl_decrypt(
+        $encryptedText,
+        'AES-128-CBC',
+        $secretKey,
+        OPENSSL_RAW_DATA,
+        $initVector
+    );
 }
+
 
 function hextobin($hexString) {
     $bin = "";
