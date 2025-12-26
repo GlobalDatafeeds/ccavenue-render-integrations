@@ -1,6 +1,6 @@
 <?php
-$working_key = 'D274F7613B83E3BCC204741394645086';
-$access_code = 'AVCX86ML78BG42XCGB';
+$working_key = '0B954FFE55A2C57F22483E3F4F50E6DF';
+$access_code = 'AVVJ87ML10CC34JVCC';
 $URL = "https://api.ccavenue.com/apis/servlet/DoWebTrans";
 
 header("Content-Type: application/json");
