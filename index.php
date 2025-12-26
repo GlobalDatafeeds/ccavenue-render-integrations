@@ -14,14 +14,7 @@ if (!$input || !is_array($input)) {
 }
 
 
-$merchant_data =
-    "merchant_id=XXXX" .
-    "&invoice_number=" . $input['merchant_reference_no'] .
-    "&invoice_date=" . date("d-m-Y") .
-    "&amount=" . $input['amount'] .
-    "&currency=INR" .
-    "&customer_name=" . urlencode($input['customer_name']) .
-    "&customer_email=" . urlencode($input['customer_email_id']);
+$merchant_data = json_encode($input);
 
 $enc_request = encrypt($merchant_data, $working_key);
 
@@ -59,38 +52,46 @@ echo json_encode([
     "full_response" => $responseData
 ]);
 
-function encrypt($plainText, $key) {
-    $secretKey = pack('H*', md5($key));
-    $initVector = pack('H*', md5($key));
-    return bin2hex(openssl_encrypt(
-        $plainText,
-        'AES-128-CBC',
-        $secretKey,
-        OPENSSL_RAW_DATA,
-        $initVector
-    ));
+function encrypt($plainText,$key)
+{
+	$key = hextobin(md5($key));
+	$initVector = pack("C*", 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f);
+	$openMode = openssl_encrypt($plainText, 'AES-128-CBC', $key, OPENSSL_RAW_DATA, $initVector);
+	$encryptedText = bin2hex($openMode);
+	return $encryptedText;
 }
 
 
-function decrypt($encryptedText, $key) {
-    $secretKey = pack('H*', md5($key));
-    $initVector = pack('H*', md5($key));
-    $encryptedText = hex2bin($encryptedText);
-    return openssl_decrypt(
-        $encryptedText,
-        'AES-128-CBC',
-        $secretKey,
-        OPENSSL_RAW_DATA,
-        $initVector
-    );
+function decrypt($encryptedText,$key)
+{
+	$key = hextobin(md5($key));
+	$initVector = pack("C*", 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f);
+	$encryptedText = hextobin($encryptedText);
+	$decryptedText = openssl_decrypt($encryptedText, 'AES-128-CBC', $key, OPENSSL_RAW_DATA, $initVector);
+	return $decryptedText;
 }
 
-
-function hextobin($hexString) {
-    $bin = "";
-    for ($i = 0; $i < strlen($hexString); $i += 2) {
-        $bin .= pack("H*", substr($hexString, $i, 2));
-    }
-    return $bin;
-}
+function hextobin($hexString) 
+ { 
+	$length = strlen($hexString); 
+	$binString="";   
+	$count=0; 
+	while($count<$length) 
+	{       
+	    $subString =substr($hexString,$count,2);           
+	    $packedString = pack("H*",$subString); 
+	    if ($count==0)
+	    {
+			$binString=$packedString;
+	    } 
+	    
+	    else 
+	    {
+			$binString.=$packedString;
+	    } 
+	    
+	    $count+=2; 
+	} 
+        return $binString; 
+  } 
 ?>
