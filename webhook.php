@@ -155,9 +155,11 @@ $payment_mode  = $cc['payment_mode'] ?? '';
 $today         = date('Y-m-d');
 $stage = ($order_status==='success' || $order_status==='successful')?'Closed Won':'Closed Lost';
 
-//$token = getZohoAccessToken();
-$token='1000.8b1615a9302aabec9ed62b4987d824fe.2c6c95dc79de80a0fdcbc615b8ce6eb0';
-if (!$token) { echo json_encode(['status'=>'error','message'=>'Zoho token missing']); exit; }
+$token = getZohoAccessToken();
+// $token='1000.36997e727ea815be4ffee043ef5aad16.55042f18e8fdaf71fc42f24ede39e119';
+// !$token
+// exit;
+if (!$token) { echo json_encode(['status'=>'error','message'=>'Zoho token missing - test imran','token_value' => $token]);  }
 $headers = ["Authorization: Zoho-oauthtoken $token", "Content-Type: application/json"];
 
 // ---------- Contact ----------
