@@ -17,7 +17,7 @@ if (!$input || !is_array($input)) {
 $merchant_data = json_encode($input);
 
 $enc_request = encrypt($merchant_data, $working_key);
-
+echo $enc_request;
 $final_data = "request_type=JSON&access_code=$access_code&command=generateQuickInvoice&version=1.2&response_type=JSON&enc_request=$enc_request";
 
 $ch = curl_init();
