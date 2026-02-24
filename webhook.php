@@ -159,7 +159,7 @@ $token = getZohoAccessToken();
 // $token='1000.36997e727ea815be4ffee043ef5aad16.55042f18e8fdaf71fc42f24ede39e119';
 // !$token
 // exit;
-if (!$token) { echo json_encode(['status'=>'error','message'=>'Zoho token missing - test imran','token_value' => $token]);  }
+if (!$token) { echo json_encode(['status'=>'error','message'=>'Zoho token missing - test ','token_value' => $token]); exit; }
 $headers = ["Authorization: Zoho-oauthtoken $token", "Content-Type: application/json"];
 
 // ---------- Contact ----------
