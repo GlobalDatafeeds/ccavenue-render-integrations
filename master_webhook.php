@@ -4,9 +4,9 @@
 //$webhook1_url = "https://ccavenue-render-integrations.onrender.com/ccavenue_webhook.php"; // Payment Status
 
 $webhook1_url = "https://ccavenue-render-integrations-1.onrender.com/ccavenue_webhook.php"; // Payment Status
-$webhook2_url = "https://ccavenue-render-integrations.onrender.com/webhook.php"; 
+//$webhook2_url = "https://ccavenue-render-integrations.onrender.com/webhook.php"; 
 
-//$webhook2_url = "https://ccavenue-render-integrations-1.onrender.com/webhook.php";        // Deal / Automation
+$webhook2_url = "https://ccavenue-render-integrations-1.onrender.com/webhook.php";        // Deal / Automation
 
 // ---------------- LOG RECEIVED DATA ----------------
 $incoming_post = $_POST;
