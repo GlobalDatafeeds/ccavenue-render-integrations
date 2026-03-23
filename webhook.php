@@ -155,7 +155,7 @@ $billing_email = trim($cc['billing_email'] ?? '');
 $billing_tel   = trim($cc['billing_tel'] ?? '');
 $payment_mode  = $cc['payment_mode'] ?? '';
 $today         = date('Y-m-d');
-$stage = ($order_status==='success' || $order_status==='successful')?'Closed Won':'Closed Lost';
+$stage = ($order_status==='success' || $order_status==='successful')?'Paid.':'Closed Lost';
 
 $token = getZohoAccessToken();
 // $token='1000.36997e727ea815be4ffee043ef5aad16.55042f18e8fdaf71fc42f24ede39e119';
@@ -209,8 +209,8 @@ for($i=1;$i<=5;$i++){
             "Product"=>$parts[1]??'',
             "Period_Days"=>(int)($parts[2]??0),
             "Exchanges"=>$parts[3]??'',
-            "Plan_Category"=>$parts[4]??'',
-            "Extra1"=>$parts[5]??'',
+            "Plan_Category"=>$parts[5]??'',
+           // "Extra1"=>$parts[5]??'',
             "Quantity"=>(int)($parts[6]??1),
             "Price_Before"=>(float)($parts[7]??0),
             "Price_After"=>(float)($parts[8]??0),
@@ -220,6 +220,9 @@ for($i=1;$i<=5;$i++){
         ];
     }
 }
+
+// Get the payload in the field
+$cc_payload_json = json_encode($cc, JSON_PRETTY_PRINT);
 
 // ---------- Deal ----------
 $deal_fields=[
@@ -236,7 +239,8 @@ $deal_fields=[
     "Payment_Mode"=>$payment_mode,
     "Payment_Status"=>($stage==='Closed Won'?'captured':'failed'),
     "Contact_Name"=>$contact_id?["id"=>$contact_id]:null,
-    "Account_Name"=>$account_id?["id"=>$account_id]:null,
+    "Description_2"=>$cc_payload_json,
+    //"Account_Name"=>$account_id?["id"=>$account_id]:null,
     "Subscription_Details"=>array_values($subscription_details),
     "Owner"=>["id"=>"862056000002106001"]
 ];
