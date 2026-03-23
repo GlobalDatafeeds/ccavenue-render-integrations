@@ -210,7 +210,7 @@ for($i=1;$i<=5;$i++){
             "Period_Days"=>(int)($parts[2]??0),
             "Exchanges"=>$parts[3]??'',
             "Plan_Category"=>"Retail",
-           // "Extra1"=>$parts[5]??'',
+            "Plan_Code"=>$parts[9]??'',
             "Quantity"=>(int)($parts[6]??1),
             "Price_Before"=>(float)($parts[7]??0),
             "Price_After"=>(float)($parts[8]??0),
