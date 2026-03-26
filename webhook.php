@@ -212,8 +212,8 @@ for($i=1;$i<=5;$i++){
             "Plan_Category"=>"Retail",
             "Plan_Code"=>$parts[9]??'',
             "Quantity"=>(int)($parts[6]??1),
-            "Price_Before"=>round((float)($parts[7]??0)),
-            "Price_After"=>round((float)($parts[8]??0)),
+            "Price_Before"=>round((float)($parts[7]??0),2),
+            "Price_After"=>round((float)($parts[8]??0),2), 
             "Expiry_Date"=>$today,
             "Subscription_Numb"=>'',
             "Sub_ID"=>''
