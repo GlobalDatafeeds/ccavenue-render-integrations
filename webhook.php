@@ -108,6 +108,7 @@ if (!empty($refNo)) {
     $status = $statusRaw === 'success' ? 'success' : 'failed';
     $paymentMode = $cc['payment_mode'] ?? 'Unknown';
 
+
     echo json_encode([
         "status" => "received",
         "reference_no" => $refNo,
@@ -150,12 +151,19 @@ if (!empty($refNo)) {
 $order_id      = $cc['order_id'] ?? '';
 $order_status  = strtolower($cc['order_status'] ?? 'failed');
 $amount        = isset($cc['amount']) ? floatval($cc['amount']) : 0.0;
+
+//new added line sk
+$status = ($order_status == 'success') ? 'success' : 'failed';
+
 $billing_name  = trim($cc['billing_name'] ?? '');
 $billing_email = trim($cc['billing_email'] ?? '');
 $billing_tel   = trim($cc['billing_tel'] ?? '');
 $payment_mode  = $cc['payment_mode'] ?? '';
 $today         = date('Y-m-d');
-$stage = ($order_status==='success' || $order_status==='successful')?'Paid.':'Closed Lost';
+
+//$stage = ($order_status==='success' || $order_status==='successful')?'Paid.':'Closed Lost';
+//comment above
+$stage = ($status == 'success') ? 'Paid.' : 'Closed Lost';
 
 $token = getZohoAccessToken();
 // $token='1000.36997e727ea815be4ffee043ef5aad16.55042f18e8fdaf71fc42f24ede39e119';
