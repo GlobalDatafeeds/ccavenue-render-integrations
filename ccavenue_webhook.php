@@ -91,12 +91,23 @@ if (isset($search_result['data'][0]['id'])) {
     $deal_id = $search_result['data'][0]['id'];
 
     $update_url = "https://zohoapis.in/crm/v2/$module/$deal_id";
-    $update_body = json_encode([
-        "data" => [[
-            "Paymet_Status" => $status,
-            "Payment_Mode" => $paymentMode
-        ]]
-    ]);
+    //before code
+    // $update_body = json_encode([
+    //     "data" => [[
+    //         "Paymet_Status" => $status,
+    //         "Payment_Mode" => $paymentMode
+    //     ]]
+    // ]);
+
+    //latest code
+$update_body = json_encode([
+    "data" => [[
+        "Paymet_Status" => $status,
+        "Payment_Mode" => $paymentMode
+    ]],
+    "trigger" => ["workflow"]
+]);
+    
 
     $ch = curl_init();
     curl_setopt($ch, CURLOPT_URL, $update_url);
