@@ -264,7 +264,19 @@ $search = json_decode($search_res,true);
 
 if(!empty($search['data'][0]['id'])){
     $deal_id=$search['data'][0]['id'];
+    
+//before code 
     $res=zput(Z_BASE."/Deals/$deal_id",$headers,json_encode(["data"=>[$deal_fields]]));
+
+    //updated code 
+    $res = zput(
+    Z_BASE."/Deals/$deal_id",
+    $headers,
+    json_encode([
+        "data" => [$deal_fields],
+        "trigger" => ["workflow"]
+    ])
+);
 }else{
     $res=zpost(Z_BASE."/Deals",$headers,json_encode(["data"=>[$deal_fields]]));
     $out=json_decode($res,true);
