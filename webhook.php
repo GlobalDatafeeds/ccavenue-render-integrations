@@ -161,9 +161,9 @@ $billing_tel   = trim($cc['billing_tel'] ?? '');
 $payment_mode  = $cc['payment_mode'] ?? '';
 $today         = date('Y-m-d');
 
-//$stage = ($order_status==='success' || $order_status==='successful')?'Paid.':'Closed Lost';
+$stage = ($order_status==='success' || $order_status==='successful')?'Paid.':'Closed Lost';
 //comment above
-$stage = ($status == 'success') ? 'Paid.' : 'Closed Lost';
+//$stage = ($status == 'success') ? 'Paid.' : 'Closed Lost';
 
 $token = getZohoAccessToken();
 // $token='1000.36997e727ea815be4ffee043ef5aad16.55042f18e8fdaf71fc42f24ede39e119';
@@ -245,8 +245,8 @@ $deal_fields=[
     "Data_Required_for_Exchange"=>["Bombay Stock Exchange (BSE)"],
     "Type_of_Customer"=>$type_of_customer,
     "Payment_Mode"=>$payment_mode,
-   // "Paymet_Status"=>($stage==='Paid.'?'captured':'failed'),
-    "Paymet_Status"=>$status,
+    "Paymet_Status"=>($stage==='Paid.'?'captured':'failed'),
+    //"Paymet_Status"=>$status,
     "Contact_Name"=>$contact_id?["id"=>$contact_id]:null,
     "Description_2"=>$cc_payload_json,
     //"Account_Name"=>$account_id?["id"=>$account_id]:null,
