@@ -277,6 +277,9 @@ if(!empty($search['data'][0]['id'])){
     //     "trigger" => ["workflow"]
     // ])
 //);
+
+
+    //testing
 }else{
     $res=zpost(Z_BASE."/Deals",$headers,json_encode(["data"=>[$deal_fields]]));
     $out=json_decode($res,true);
